@@ -17,6 +17,7 @@ spec:
           enabled: true         # pour exporter les alertes (webhook, Slack, etc.)
           webui:
             enabled: true       # petite UI de visualisation des alertes
+            existingSecret: "falco-ui-credentials"   # cree hors Git : kubectl create secret generic falco-ui-credentials -n falco --from-literal=FALCOSIDEKICK_UI_USER="admin:<mot-de-passe>"
   destination:
     server: https://kubernetes.default.svc
     namespace: falco
