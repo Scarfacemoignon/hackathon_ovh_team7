@@ -182,23 +182,22 @@ cluster à la main. Ajouter un outil = ajouter un fichier + `git push`.
 ## 4. Accéder aux outils
 
 Tous les outils sont internes au cluster - on y accède via `kubectl port-forward`, chacun dans
-un terminal séparé :
+un terminal séparé. **Aucun mot de passe n'est écrit en clair dans ce dépôt** : chaque valeur est
+définie manuellement (pas générée automatiquement — certains charts, comme celui de Grafana,
+régénèrent sinon un mot de passe aléatoire différent à chaque sync Argo CD), stockée dans un
+Secret Kubernetes créé hors Git et référencée via `existingSecret` dans les values Helm.
+
+**Étape unique, une seule fois** : copier `.env.example` en `.env` (déjà ignoré par Git) et
+remplir chaque valeur avec la commande `kubectl` indiquée en commentaire dans le fichier — ou en
+la demandant directement à l'équipe, puisque ce sont des valeurs fixes et partageables.
+Ensuite, `source .env` dans un terminal exporte tout d'un coup :
 
 | Outil | Commande | URL | Utilisateur | Mot de passe |
 |---|---|---|---|---|
-| Argo CD | `kubectl port-forward svc/argocd-server -n argocd 8080:443` | https://localhost:8080 | `admin` | `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' \| base64 -d` |
-| Grafana | `kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80` | http://localhost:3000 | `admin` | `kubectl -n monitoring get secret grafana-admin-credentials -o jsonpath='{.data.admin-password}' \| base64 -d` |
+| Argo CD | `kubectl port-forward svc/argocd-server -n argocd 8080:443` | https://localhost:8080 | `admin` | `$ARGOCD_ADMIN_PASSWORD` |
+| Grafana | `kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80` | http://localhost:3000 | `admin` | `$GRAFANA_ADMIN_PASSWORD` |
 | Prometheus | `kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090` | http://localhost:9090 | — | — |
-| Falco UI | `kubectl port-forward svc/falco-falcosidekick-ui -n falco 2802:2802` | http://localhost:2802 | `admin` | `kubectl -n falco get secret falco-ui-credentials -o jsonpath='{.data.FALCOSIDEKICK_UI_USER}' \| base64 -d` (format `admin:motdepasse`) |
-
-**Aucun mot de passe n'est écrit en clair dans ce dépôt** — chacun est défini manuellement (pas
-généré automatiquement) dans un Secret Kubernetes créé hors Git, référencé via `existingSecret`
-dans les values Helm (sinon certains charts, comme celui de Grafana, en régénèrent un nouveau
-aléatoire à chaque sync Argo CD). Les valeurs vivent uniquement dans `.env` (ignoré par Git).
-
-**Raccourci pratique** : copier `.env.example` en `.env` (ignoré par Git), remplir les valeurs
-avec les commandes `kubectl` ci-dessus, puis `source .env` dans un terminal exporte tout d'un
-coup — utile avant de lancer le remédiateur ou pour retrouver un mot de passe rapidement.
+| Falco UI | `kubectl port-forward svc/falco-falcosidekick-ui -n falco 2802:2802` | http://localhost:2802 | `$FALCO_UI_USER` | `$FALCO_UI_PASSWORD` |
 
 **Rapports de sécurité** (pas d'UI dédiée - ce sont des CRD Kubernetes natives, consultables
 avec `kubectl` depuis n'importe où) :
