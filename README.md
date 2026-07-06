@@ -12,6 +12,26 @@ Détection d'une faille (Trivy) → analyse et correctif proposé par l'IA (AI E
 
 ## 1. Architecture
 
+```
+Cluster Kubernetes managé OVHcloud (hackathon-equipe-7, région gra11)
+│
+├── Argo CD (GitOps)              ── surveille le dépôt Git, applique tout automatiquement
+├── Trivy-operator (audit)        ── scanne images (CVE) + configs, publie des CRD
+├── Kyverno (policy-as-code)      ── évalue chaque ressource contre 3 policies (mode Audit)
+├── Falco (runtime)               ── observe les syscalls, alerte sur comportement suspect
+├── Prometheus / Grafana          ── collecte les métriques (dont trivy_image_vulnerabilities)
+│
+└── Remédiateur (apps/remediator/remediator.py, tourne hors cluster, en local)
+        1. lit les VulnerabilityReport (API Kubernetes)
+        2. lit le manifest actuel depuis GitHub (Git = source de vérité, jamais le cluster)
+        3. envoie rapport + manifest à l'IA (AI Endpoints OVHcloud)
+        4. reçoit un YAML corrigé + une explication
+        5. ouvre une Pull Request GitHub
+                │
+                ▼ revue humaine obligatoire + merge
+        Dépôt Git (GitHub) ──► Argo CD détecte le changement ──► resynchronise le cluster
+```
+
 ```mermaid
 flowchart TD
     subgraph K8s["Cluster Kubernetes managé OVHcloud (gra11)"]
