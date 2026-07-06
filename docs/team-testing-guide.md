@@ -95,8 +95,8 @@ source ../../.env
 
 ⚠️ Ne lancer `remediator.py` (pas `test_ai_connection.py`) qu'après avoir vérifié avec l'équipe
 qu'aucune PR `fix/ai-remediation` n'est déjà ouverte (`gh pr list` sur le dépôt) — sinon conflit
-avec une PR existante. Voir `docs/demo-script.md` §C pour remettre le cluster en état vulnérable
-avant de tester, et §B étape 4 pour lancer le remédiateur.
+avec une PR existante. Voir `docs/demo-script.md` §B pour remettre le cluster en état vulnérable
+avant de tester, et §C étape 4 pour lancer le remédiateur.
 
 ## Récapitulatif : ce que "ça fonctionne" veut dire
 
