@@ -1,25 +1,196 @@
 # Hackathon OVHcloud x Ynov — Équipe 7
 
-Chaîne d'audit et de remédiation GitOps sécurisée sur Kubernetes.
+Chaîne d'audit et de remédiation GitOps sécurisée sur Kubernetes, avec l'IA comme moteur actif
+de détection, d'analyse et de correctif — pas un simple assistant.
 
-Boucle cible : détection d'une faille (Trivy Operator) → analyse et correctif proposé par l'IA (AI Endpoints OVHcloud) → Pull Request automatique → revue humaine → merge → resynchronisation Argo CD → cluster corrigé.
+**La boucle cible** :
+Détection d'une faille (Trivy) → analyse et correctif proposé par l'IA (AI Endpoints OVHcloud)
+→ Pull Request automatique sur GitHub → revue humaine → merge → resynchronisation Argo CD
+→ cluster corrigé.
 
-## Structure du dépôt
+---
+
+## 1. Architecture
+
+```
+Cluster Kubernetes managé OVHcloud (hackathon-equipe-7, région gra11)
+│
+├── Argo CD (GitOps)              ── surveille le dépôt Git, applique tout automatiquement
+├── Trivy-operator (audit)        ── scanne images (CVE) + configs, publie des CRD
+├── Kyverno (policy-as-code)      ── évalue chaque ressource contre 3 policies (mode Audit)
+├── Falco (runtime)               ── observe les syscalls, alerte sur comportement suspect
+├── Prometheus / Grafana          ── collecte les métriques (dont trivy_image_vulnerabilities)
+│
+└── Remédiateur (apps/remediator/remediator.py, tourne hors cluster, en local)
+        1. lit les VulnerabilityReport (API Kubernetes)
+        2. lit le manifest actuel depuis GitHub (Git = source de vérité, jamais le cluster)
+        3. envoie rapport + manifest à l'IA (AI Endpoints OVHcloud)
+        4. reçoit un YAML corrigé + une explication
+        5. ouvre une Pull Request GitHub
+                │
+                ▼ revue humaine obligatoire + merge
+        Dépôt Git (GitHub) ──► Argo CD détecte le changement ──► resynchronise le cluster
+```
+
+**Pourquoi ce modèle est sûr (Zero Trust)** : ni l'IA ni le script remédiateur n'ont jamais
+d'accès en écriture direct au cluster. Ils ne font que proposer un changement sur Git ; c'est
+Argo CD — qui tourne dans le cluster, avec ses propres droits — qui l'applique réellement,
+après qu'un humain a validé. Si l'IA se trompe, le pire qui puisse arriver est une PR erronée,
+jamais une modification silencieuse du cluster.
+
+**Justification des choix** (voir aussi `docs/architecture.md` pour le détail complet) :
+- **Argo CD (pull, pas push)** : réduit la surface d'attaque, aucun credential cluster ne sort
+  vers l'extérieur.
+- **Trivy-operator plutôt que Kubescape** : rapports exposés comme des CRD Kubernetes standard,
+  consommables directement par `kubectl` et par notre script Python.
+- **Kyverno en mode `Audit`** (pas `Enforce`) : en `Enforce` il aurait bloqué la création même
+  de notre workload volontairement vulnérable — choix pragmatique pour la durée du hackathon.
+- **Falco avec driver `modern_ebpf`** : seul driver ne nécessitant pas de compilation de module
+  noyau, donc compatible avec un cluster managé.
+- **Revue humaine obligatoire avant merge** : le garde-fou central de toute l'architecture
+  (voir l'incident réel raconté en §5).
+
+## 2. Structure du dépôt
 
 ```
 apps/
-  vulnerable-app/   # le workload volontairement vulnérable (la "cible")
-  remediator/       # script IA : lecture des rapports Trivy, génération du correctif, ouverture de PR
+  vulnerable-app/deployment.yaml   # le workload volontairement vulnérable (la "cible")
+  remediator/                      # script IA : lecture Trivy, correctif IA, ouverture de PR
+    remediator.py
+    test_ai_connection.py          # test isolé de connexion aux AI Endpoints
+    README.md                      # comment lancer le remédiateur, variables d'env requises
 infra/
-  argocd-apps/      # Applications Argo CD (pattern app-of-apps)
-  trivy/
-  kyverno/
-  prometheus/
-  falco/
-policies/           # policies Kyverno
-docs/               # rapport d'architecture + tableau CNCF
+  argocd-apps/                     # Applications Argo CD (pattern App-of-Apps)
+    vulnerable-app.yaml
+    trivy-operator.yaml
+    kyverno.yaml
+    policies.yaml
+    prometheus.yaml
+    falco.yaml
+policies/                          # les 3 ClusterPolicy Kyverno
+docs/
+  architecture.md                  # rapport d'architecture + tableau CNCF
+  demo-script.md                   # script de démo minuté + procédure de rejeu
+root-app.yaml                      # Application Argo CD racine (App-of-Apps)
 ```
 
-## Stack (100% CNCF)
+**Le pattern App-of-Apps** : `root-app.yaml` est la seule Application appliquée manuellement
+sur le cluster. Elle surveille le dossier `infra/argocd-apps/` : chaque fichier YAML qu'on y
+ajoute devient automatiquement une nouvelle Application Argo CD, sans jamais retoucher au
+cluster à la main. Ajouter un outil = ajouter un fichier + `git push`.
 
-Argo CD · Trivy Operator · Kyverno · Falco · Prometheus · AI Endpoints OVHcloud
+## 3. Étapes de construction (dans l'ordre réel)
+
+1. **Préparation du poste** : installation de `kubectl`, `helm`, `gh`, `kubectx`, `k9s`, `argocd`
+   CLI (dans `~/.local/bin`, pas de droits sudo sur ce poste). Copie du kubeconfig équipe dans
+   `~/.kube/config`, vérification `kubectl get nodes`.
+2. **Dépôt Git** : création de l'arborescence (`apps/`, `infra/argocd-apps/`, `policies/`,
+   `docs/`), premier commit.
+3. **Argo CD** : `kubectl create namespace argocd` + apply des manifests stables — **la seule
+   fois où on installe quelque chose avec `kubectl apply` en direct**. Récupération du mot de
+   passe admin initial, connexion CLI et UI.
+4. **Connexion du dépôt Git à Argo CD** (`argocd repo add` — le dépôt est public, donc pas de
+   credentials nécessaires pour la lecture).
+5. **Première Application "hello world"** (`apps/vulnerable-app/deployment.yaml` avec un nginx
+   sain) pour valider que la boucle GitOps de base fonctionne.
+6. **Pattern App-of-Apps** : création de `root-app.yaml`, appliqué une seule fois — **dernier
+   `kubectl apply` manuel de tout le hackathon**. À partir de là, tout passe par Git.
+7. **Déploiement du workload volontairement vulnérable** : remplacement du deployment sain par
+   une version à 4 familles de failles (image `nginx:1.14` obsolète, `privileged: true`,
+   `runAsUser: 0`, aucune limite de ressources).
+8. **Trivy-operator** installé via une Application Argo CD (chart Helm officiel). Vérification :
+   des dizaines de CVE CRITICAL/HIGH détectées sur l'image.
+9. **Kyverno** installé en mode `Audit`, avec 3 policies (`disallow-privileged`,
+   `require-limits`, `disallow-latest-tag`). Vérification : 2 violations détectées sur l'app
+   vulnérable.
+10. **Prometheus / Grafana** (`kube-prometheus-stack`) installé, avec le `ServiceMonitor` de
+    Trivy activé pour exposer la métrique `trivy_image_vulnerabilities`.
+11. **Falco** installé (driver `modern_ebpf`, UI `falcosidekick` activée). Test : ouverture d'un
+    shell dans le conteneur vulnérable + lecture de `/etc/shadow` → alerte Falco confirmée.
+12. **AI Endpoints OVHcloud** : récupération du modèle (`Qwen2.5-VL-72B-Instruct`, seul modèle
+    disponible pour ce hackathon) et de son URL de base, premier appel de test réussi.
+13. **Développement du remédiateur** (`apps/remediator/remediator.py`) : lit les rapports Trivy,
+    lit le manifest sur GitHub, demande un correctif à l'IA, ouvre une Pull Request.
+14. **Test de la boucle complète** : exécution du remédiateur → PR ouverte automatiquement →
+    revue humaine (ajustement vers une image `alpine`) → merge → Argo CD resynchronise → un bug
+    réel est découvert (le conteneur ne démarre plus en non-root, faute de volumes inscriptibles)
+    → corrigé → cluster validé sain (0 CVE CRITICAL/HIGH, 3/3 policies Kyverno passent).
+15. **Documentation** : rapport d'architecture, tableau CNCF, script de démo.
+
+## 4. Accéder aux outils
+
+Tous les outils sont internes au cluster — on y accède via `kubectl port-forward`, chacun dans
+un terminal séparé :
+
+| Outil | Commande | URL | Login |
+|---|---|---|---|
+| Argo CD | `kubectl port-forward svc/argocd-server -n argocd 8080:443` | https://localhost:8080 | `admin` / voir `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' \| base64 -d` |
+| Grafana | `kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80` | http://localhost:3000 | `admin` / `hackathon2026` |
+| Prometheus | `kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090` | http://localhost:9090 | — |
+| Falco UI | `kubectl port-forward svc/falco-falcosidekick-ui -n falco 2802:2802` | http://localhost:2802 | `admin` / `admin` |
+
+**Rapports de sécurité** (pas d'UI dédiée — ce sont des CRD Kubernetes natives, consultables
+avec `kubectl` depuis n'importe où) :
+```bash
+kubectl get vulnerabilityreports -A       # CVE détectées par Trivy
+kubectl get configauditreports -A         # mauvaises pratiques de config détectées par Trivy
+kubectl get policyreports -A              # violations détectées par Kyverno
+kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=50 | grep -i warning   # alertes Falco
+```
+
+## 5. Le remédiateur IA — comment le lancer
+
+Voir `apps/remediator/README.md` pour le détail complet. En résumé :
+
+```bash
+cd apps/remediator
+python3 -m venv .venv                                        # une seule fois
+.venv/bin/pip install openai kubernetes PyGithub pyyaml      # une seule fois
+
+export OVH_AI_TOKEN="..."
+export OVH_AI_BASE_URL="https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
+export OVH_AI_MODEL="Qwen2.5-VL-72B-Instruct"
+export GITHUB_TOKEN="..."      # fine-grained PAT, droits Contents:RW + Pull requests:RW
+export GITHUB_REPO="Scarfacemoignon/hackathon_ovh_team7"
+
+.venv/bin/python remediator.py
+```
+
+Le script affiche le rapport résumé, l'explication de l'IA, puis l'URL de la Pull Request
+ouverte automatiquement. **Elle doit être relue par un humain avant d'être mergée** — ce n'est
+jamais automatique, c'est le garde-fou central de l'architecture.
+
+## 6. Incident réel rencontré (bon exemple pour la soutenance)
+
+Le premier correctif proposé par l'IA passait le conteneur en utilisateur non-root — bonne
+pratique de sécurité, mais qui a cassé le démarrage de nginx (`/var/cache/nginx/client_temp`
+non accessible en écriture par un utilisateur non-root sans volume dédié). Merge effectué,
+Argo CD a resynchronisé, le pod est parti en `CrashLoopBackOff`. Corrigé en ajoutant deux
+volumes `emptyDir` (`/var/cache/nginx`, `/var/run`). **C'est exactement pour ce genre de cas
+que la revue humaine reste indispensable** — une automatisation à 100% sans contrôle aurait pu
+casser la production silencieusement.
+
+## 7. Statut CNCF des composants
+
+| Composant | Rôle | Statut CNCF |
+|---|---|---|
+| Argo CD | GitOps | Graduated |
+| Trivy-operator | Audit de sécurité | Projet Aqua Security, scanner validé CNCF |
+| Kyverno | Policy-as-code | Graduated |
+| Falco | Détection runtime | Graduated |
+| Prometheus | Observabilité | Graduated |
+| AI Endpoints OVHcloud | Couche IA générative | OVHcloud (hors CNCF, assumé dans le brief) |
+
+## 8. Limites connues
+
+Voir `docs/architecture.md` §6 et `docs/demo-script.md` pour le détail : déclenchement manuel
+du remédiateur (une vraie prod utiliserait un `CronJob`), pas de validation
+`kubectl apply --dry-run=server` avant l'ouverture de la PR, secrets passés en variables
+d'environnement plutôt que via un `Secret` Kubernetes + External Secrets Operator, un seul
+rapport traité par exécution.
+
+## 9. Documentation complémentaire
+
+- `docs/architecture.md` — rapport d'architecture complet (1-2 pages) + tableau CNCF
+- `docs/demo-script.md` — script de démo minuté (10 min) + procédure de rejeu de la boucle
+- `apps/remediator/README.md` — documentation détaillée du remédiateur
