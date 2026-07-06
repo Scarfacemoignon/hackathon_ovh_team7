@@ -25,3 +25,13 @@ spec:
               memory: "128Mi"
           ports:
             - containerPort: 80
+          volumeMounts:
+            - name: cache
+              mountPath: /var/cache/nginx
+            - name: run
+              mountPath: /var/run
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
