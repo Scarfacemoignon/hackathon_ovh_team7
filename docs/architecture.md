@@ -1,6 +1,6 @@
-# Rapport d'architecture — Chaîne d'audit et de remédiation GitOps sécurisée
+# Rapport d'architecture - Chaîne d'audit et de remédiation GitOps sécurisée
 
-Équipe 7 — Hackathon OVHcloud x Ynov, 6-7 juillet 2026.
+Équipe 7 - Hackathon OVHcloud x Ynov, 6-7 juillet 2026.
 
 ## 1. Objectif
 
@@ -43,7 +43,7 @@ Cluster Kubernetes OVHcloud (hackathon-equipe-7, gra11)
    `require-limits`, `disallow-latest-tag`) et publie des `PolicyReport`.
 4. Falco surveille en parallèle le comportement runtime du pod (ex : lecture de `/etc/shadow`).
 5. Le remédiateur (déclenché manuellement dans cette version hackathon) lit le
-   `VulnerabilityReport`, lit le manifest **depuis GitHub** (jamais depuis le cluster — Git reste
+   `VulnerabilityReport`, lit le manifest **depuis GitHub** (jamais depuis le cluster - Git reste
    la seule source de vérité), et interroge l'IA avec un prompt structuré imposant un format de
    sortie strict (`EXPLICATION:` puis bloc ` ```yaml `).
 6. Le YAML retourné est validé (`yaml.safe_load`) avant d'être committé sur une branche dédiée
@@ -51,20 +51,20 @@ Cluster Kubernetes OVHcloud (hackathon-equipe-7, gra11)
 7. Un humain relit, ajuste si besoin (dans notre cas : changement du tag d'image proposé), puis
    merge.
 8. Argo CD détecte le nouveau commit sur `main` et resynchronise automatiquement le cluster
-   (`prune` + `selfHeal` activés) — sans jamais donner à l'IA ou au script un accès direct
+   (`prune` + `selfHeal` activés) - sans jamais donner à l'IA ou au script un accès direct
    d'écriture au cluster.
 9. Le scan Trivy suivant confirme la correction (dans notre run : 27 CRITICAL / 50 HIGH → 0 / 0).
 
 ## 4. Justification des choix techniques
 
-- **Argo CD plutôt qu'un pipeline CI qui push** : modèle *pull* — l'agent GitOps va chercher les
+- **Argo CD plutôt qu'un pipeline CI qui push** : modèle *pull* - l'agent GitOps va chercher les
   changements depuis le cluster, aucun credential cluster ne circule vers l'extérieur.
   Réduit la surface d'attaque (principe Zero Trust).
 - **Trivy-operator plutôt que Kubescape** : rapports exposés directement comme des CRD
   Kubernetes (`VulnerabilityReport`, `ConfigAuditReport`), consommables nativement par
   `kubectl` et par notre script Python sans dépendance supplémentaire.
 - **Kyverno en mode `Audit` (pas `Enforce`)** : en `Enforce`, Kyverno aurait bloqué la création
-  même de notre workload volontairement vulnérable — on n'aurait plus rien eu à démontrer.
+  même de notre workload volontairement vulnérable - on n'aurait plus rien eu à démontrer.
   Un choix pragmatique pour la durée du hackathon, à durcir en production.
 - **Falco avec driver `modern_ebpf`** : seul driver ne nécessitant pas de compilation de module
   noyau, donc compatible avec un cluster managé où l'on ne contrôle pas le kernel des nodes.
@@ -73,7 +73,7 @@ Cluster Kubernetes OVHcloud (hackathon-equipe-7, gra11)
   hackathon. Prompt à `temperature: 0.2` pour privilégier la fiabilité du YAML plutôt que la
   créativité.
 - **Revue humaine obligatoire avant merge** : le garde-fou central de toute l'architecture.
-  Constaté en pratique — le premier correctif de l'IA (passage en non-root) cassait le
+  Constaté en pratique - le premier correctif de l'IA (passage en non-root) cassait le
   démarrage du conteneur (`/var/cache/nginx` non accessible en écriture) ; sans revue humaine,
   ce correctif cassé aurait été appliqué tel quel par Argo CD.
 
@@ -81,12 +81,12 @@ Cluster Kubernetes OVHcloud (hackathon-equipe-7, gra11)
 
 | Composant | Rôle dans la chaîne | Statut CNCF |
 |---|---|---|
-| Argo CD | GitOps — synchronisation Git → cluster | Graduated |
+| Argo CD | GitOps - synchronisation Git → cluster | Graduated |
 | Trivy-operator | Audit de sécurité (CVE + config) | Projet Aqua Security, scanner validé CNCF |
 | Kyverno | Policy-as-code | Graduated |
 | Falco | Détection de menaces runtime | Graduated |
 | Prometheus | Observabilité & métriques | Graduated |
-| AI Endpoints OVHcloud | Couche d'IA générative | OVHcloud (hors CNCF — assumé dans le brief) |
+| AI Endpoints OVHcloud | Couche d'IA générative | OVHcloud (hors CNCF - assumé dans le brief) |
 
 ## 6. Limites et pistes d'amélioration
 
