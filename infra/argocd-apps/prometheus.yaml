@@ -1,24 +1,23 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: trivy-operator
+  name: kube-prometheus-stack
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: https://aquasecurity.github.io/helm-charts/
-    chart: trivy-operator
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
     targetRevision: "*"
     helm:
       values: |
-        trivy:
-          ignoreUnfixed: true    # ne remonte que les CVE ayant un correctif
-        serviceMonitor:
-          enabled: true          # expose les métriques pour Prometheus
+        grafana:
+          adminPassword: "hackathon2026"
   destination:
     server: https://kubernetes.default.svc
-    namespace: trivy-system
+    namespace: monitoring
   syncPolicy:
     automated: { prune: true, selfHeal: true }
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
