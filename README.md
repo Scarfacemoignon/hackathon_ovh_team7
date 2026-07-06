@@ -4,9 +4,35 @@ Chaîne d'audit et de remédiation GitOps sécurisée sur Kubernetes, avec l'IA 
 de détection, d'analyse et de correctif - pas un simple assistant.
 
 **La boucle cible** :
-Détection d'une faille (Trivy) → analyse et correctif proposé par l'IA (AI Endpoints OVHcloud)
-→ Pull Request automatique sur GitHub → revue humaine → merge → resynchronisation Argo CD
-→ cluster corrigé.
+
+```mermaid
+flowchart TD
+    A(["🔍 Détection d'une faille<br/>Trivy"])
+    B(["🤖 Analyse + correctif proposé<br/>AI Endpoints OVHcloud"])
+    C(["🔀 Pull Request automatique<br/>GitHub"])
+    D(["👀 Revue humaine"])
+    E(["✅ Merge"])
+    F(["🔄 Resynchronisation<br/>Argo CD"])
+    G(["🛡️ Cluster corrigé"])
+
+    A --> B --> C --> D --> E --> F --> G
+
+    classDef detect fill:#ef4444,stroke:#7f1d1d,color:#ffffff,font-weight:bold
+    classDef ai fill:#8b5cf6,stroke:#4c1d95,color:#ffffff,font-weight:bold
+    classDef pr fill:#3b82f6,stroke:#1e3a8a,color:#ffffff,font-weight:bold
+    classDef human fill:#f97316,stroke:#7c2d12,color:#ffffff,font-weight:bold
+    classDef merge fill:#22c55e,stroke:#14532d,color:#ffffff,font-weight:bold
+    classDef sync fill:#06b6d4,stroke:#164e63,color:#ffffff,font-weight:bold
+    classDef done fill:#16a34a,stroke:#052e16,color:#ffffff,font-weight:bold
+
+    class A detect
+    class B ai
+    class C pr
+    class D human
+    class E merge
+    class F sync
+    class G done
+```
 
 ---
 
