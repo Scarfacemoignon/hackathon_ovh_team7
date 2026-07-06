@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: nginx:1.23.3
+          image: nginx:1.30.3-alpine
           securityContext:
             runAsUser: 101
           resources:
