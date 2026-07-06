@@ -13,9 +13,11 @@ kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80
 kubectl port-forward svc/falco-falcosidekick-ui -n falco 2802:2802
 ```
 
-- Argo CD : https://localhost:8080 (admin / mot de passe initial - voir `argocd-initial-admin-secret`)
-- Grafana : http://localhost:3000 (admin / hackathon2026)
-- Falco UI : http://localhost:2802 (admin / admin)
+- Argo CD : https://localhost:8080 — `admin` / `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`
+- Grafana : http://localhost:3000 — `admin` / `kubectl -n monitoring get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d`
+- Falco UI : http://localhost:2802 — `kubectl -n falco get secret falco-ui-credentials -o jsonpath='{.data.FALCOSIDEKICK_UI_USER}' | base64 -d` (format `admin:motdepasse`)
+
+Aucun de ces mots de passe n'est en clair dans le dépôt — voir README §4 pour le détail.
 
 **Remettre le cluster en état vulnérable avant la démo** (voir procédure de rejeu ci-dessous) pour pouvoir montrer la boucle en direct plutôt qu'un état déjà corrigé.
 

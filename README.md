@@ -184,12 +184,15 @@ cluster à la main. Ajouter un outil = ajouter un fichier + `git push`.
 Tous les outils sont internes au cluster - on y accède via `kubectl port-forward`, chacun dans
 un terminal séparé :
 
-| Outil | Commande | URL | Login |
-|---|---|---|---|
-| Argo CD | `kubectl port-forward svc/argocd-server -n argocd 8080:443` | https://localhost:8080 | `admin` / voir `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' \| base64 -d` |
-| Grafana | `kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80` | http://localhost:3000 | `admin` / `hackathon2026` |
-| Prometheus | `kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090` | http://localhost:9090 | - |
-| Falco UI | `kubectl port-forward svc/falco-falcosidekick-ui -n falco 2802:2802` | http://localhost:2802 | `admin` / `admin` |
+| Outil | Commande | URL | Utilisateur | Mot de passe |
+|---|---|---|---|---|
+| Argo CD | `kubectl port-forward svc/argocd-server -n argocd 8080:443` | https://localhost:8080 | `admin` | `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' \| base64 -d` |
+| Grafana | `kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80` | http://localhost:3000 | `admin` | `kubectl -n monitoring get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' \| base64 -d` |
+| Prometheus | `kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090` | http://localhost:9090 | — | — |
+| Falco UI | `kubectl port-forward svc/falco-falcosidekick-ui -n falco 2802:2802` | http://localhost:2802 | `admin` | `kubectl -n falco get secret falco-ui-credentials -o jsonpath='{.data.FALCOSIDEKICK_UI_USER}' \| base64 -d` (format `admin:motdepasse`) |
+
+**Aucun mot de passe n'est écrit en clair dans ce dépôt** — chacun est généré aléatoirement par
+son Secret Kubernetes (jamais commité) et récupéré à la demande avec la commande ci-dessus.
 
 **Rapports de sécurité** (pas d'UI dédiée - ce sont des CRD Kubernetes natives, consultables
 avec `kubectl` depuis n'importe où) :
