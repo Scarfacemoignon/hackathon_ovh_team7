@@ -187,12 +187,18 @@ un terminal séparé :
 | Outil | Commande | URL | Utilisateur | Mot de passe |
 |---|---|---|---|---|
 | Argo CD | `kubectl port-forward svc/argocd-server -n argocd 8080:443` | https://localhost:8080 | `admin` | `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' \| base64 -d` |
-| Grafana | `kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80` | http://localhost:3000 | `admin` | `kubectl -n monitoring get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' \| base64 -d` |
+| Grafana | `kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80` | http://localhost:3000 | `admin` | `kubectl -n monitoring get secret grafana-admin-credentials -o jsonpath='{.data.admin-password}' \| base64 -d` |
 | Prometheus | `kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090` | http://localhost:9090 | — | — |
 | Falco UI | `kubectl port-forward svc/falco-falcosidekick-ui -n falco 2802:2802` | http://localhost:2802 | `admin` | `kubectl -n falco get secret falco-ui-credentials -o jsonpath='{.data.FALCOSIDEKICK_UI_USER}' \| base64 -d` (format `admin:motdepasse`) |
 
-**Aucun mot de passe n'est écrit en clair dans ce dépôt** — chacun est généré aléatoirement par
-son Secret Kubernetes (jamais commité) et récupéré à la demande avec la commande ci-dessus.
+**Aucun mot de passe n'est écrit en clair dans ce dépôt** — chacun est défini manuellement (pas
+généré automatiquement) dans un Secret Kubernetes créé hors Git, référencé via `existingSecret`
+dans les values Helm (sinon certains charts, comme celui de Grafana, en régénèrent un nouveau
+aléatoire à chaque sync Argo CD). Les valeurs vivent uniquement dans `.env` (ignoré par Git).
+
+**Raccourci pratique** : copier `.env.example` en `.env` (ignoré par Git), remplir les valeurs
+avec les commandes `kubectl` ci-dessus, puis `source .env` dans un terminal exporte tout d'un
+coup — utile avant de lancer le remédiateur ou pour retrouver un mot de passe rapidement.
 
 **Rapports de sécurité** (pas d'UI dédiée - ce sont des CRD Kubernetes natives, consultables
 avec `kubectl` depuis n'importe où) :
@@ -212,12 +218,7 @@ cd apps/remediator
 python3 -m venv .venv                                        # une seule fois
 .venv/bin/pip install openai kubernetes PyGithub pyyaml      # une seule fois
 
-export OVH_AI_TOKEN="..."
-export OVH_AI_BASE_URL="https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
-export OVH_AI_MODEL="Qwen2.5-VL-72B-Instruct"
-export GITHUB_TOKEN="..."      # fine-grained PAT, droits Contents:RW + Pull requests:RW
-export GITHUB_REPO="Scarfacemoignon/hackathon_ovh_team7"
-
+source ../../.env       # charge OVH_AI_TOKEN, OVH_AI_BASE_URL, OVH_AI_MODEL, GITHUB_TOKEN, GITHUB_REPO
 .venv/bin/python remediator.py
 ```
 

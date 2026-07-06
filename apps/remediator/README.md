@@ -24,16 +24,13 @@ python3 -m venv .venv
 
 **Sécurité** : ces variables ne doivent jamais être committées dans Git. En production, on les
 gérerait via un `Secret` Kubernetes + External Secrets Operator plutôt qu'en clair dans le shell.
+Pour le hackathon, un fichier `.env` à la racine du dépôt (ignoré par Git, voir `.env.example`
+pour le modèle) évite d'avoir à les retaper à chaque fois.
 
 ## Lancer
 
 ```bash
-export OVH_AI_TOKEN="..."
-export OVH_AI_BASE_URL="https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
-export OVH_AI_MODEL="Qwen2.5-VL-72B-Instruct"
-export GITHUB_TOKEN="ghp_..."
-export GITHUB_REPO="Scarfacemoignon/hackathon_ovh_team7"
-
+source ../../.env       # ou exporter les 5 variables ci-dessus manuellement
 .venv/bin/python remediator.py
 ```
 
