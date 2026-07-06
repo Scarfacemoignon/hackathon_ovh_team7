@@ -13,12 +13,15 @@ spec:
     spec:
       containers:
         - name: web
-          # FAILLE 1 : image très ancienne, bourrée de CVE connues
-          image: nginx:1.14
-          # FAILLE 2 : conteneur privilégié = accès quasi-root au node
+          image: nginx:1.30.3-alpine
           securityContext:
-            privileged: true
-            runAsUser: 0          # FAILLE 3 : tourne en root
-          # FAILLE 4 : aucune limite CPU/mémoire
+            runAsUser: 101
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
           ports:
             - containerPort: 80
