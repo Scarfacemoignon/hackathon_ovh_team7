@@ -9,8 +9,15 @@ spec:
     repoURL: https://prometheus-community.github.io/helm-charts
     chart: kube-prometheus-stack
     targetRevision: "*"
-    # Pas de grafana.adminPassword en clair ici : le chart genere un mot de passe
-    # aleatoire stocke dans le Secret "kube-prometheus-stack-grafana" (cle admin-password).
+    helm:
+      values: |
+        grafana:
+          admin:
+            # Secret cree hors Git : kubectl create secret generic grafana-admin-credentials -n monitoring --from-literal=admin-user=admin --from-literal=admin-password="<mot-de-passe>"
+            # Sans ce champ fige, le hook du chart regenere un nouveau mot de passe a chaque sync Argo CD.
+            existingSecret: "grafana-admin-credentials"
+            userKey: admin-user
+            passwordKey: admin-password
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
