@@ -1,3 +1,5 @@
 apps/remediator/.venv/
 __pycache__/
 *.pyc
+.env
+*.env
