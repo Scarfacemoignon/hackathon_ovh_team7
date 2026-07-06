@@ -258,5 +258,6 @@ rapport traité par exécution.
 ## 9. Documentation complémentaire
 
 - `docs/architecture.md` - rapport d'architecture complet (1-2 pages) + tableau CNCF
-- `docs/demo-script.md` - script de démo minuté (10 min) + procédure de rejeu de la boucle
+- `docs/demo-script.md` - script de démo complet de A à Z (backstage, déroulé minuté, rejeu)
+- `docs/team-testing-guide.md` - guide pour qu'un coéquipier vérifie la stack sur son poste
 - `apps/remediator/README.md` - documentation détaillée du remédiateur
