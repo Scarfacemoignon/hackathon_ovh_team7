@@ -1,9 +1,9 @@
-# Script de démo — 10 minutes chrono, de A à Z
+# Script de démo - 10 minutes chrono, de A à Z
 
-Équipe 7 — Hackathon OVHcloud x Ynov. Cluster : `hackathon-equipe-7` (gra11).
+Équipe 7 - Hackathon OVHcloud x Ynov. Cluster : `hackathon-equipe-7` (gra11).
 Dépôt : https://github.com/Scarfacemoignon/hackathon_ovh_team7
 
-## A. Backstage — à faire 15-20 min avant de passer devant le jury
+## A. Backstage - à faire 15-20 min avant de passer devant le jury
 
 **1. Vérifier l'accès au cluster.**
 ```bash
@@ -67,9 +67,9 @@ kubectl get policyreports -n demo
 kubectl exec -it deploy/vulnerable-web -n demo -- sh -c "cat /etc/shadow"
 kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=20 | grep -i warning
 ```
-Montrer aussi l'alerte dans la Falco UI (http://localhost:2802) — moment très visuel.
+Montrer aussi l'alerte dans la Falco UI (http://localhost:2802) - moment très visuel.
 
-**4. (2 min) Lancer le remédiateur — la PR s'ouvre en direct.**
+**4. (2 min) Lancer le remédiateur - la PR s'ouvre en direct.**
 ```bash
 cd apps/remediator
 source ../../.env
@@ -78,9 +78,9 @@ source ../../.env
 Le script affiche : le rapport résumé lu depuis le cluster, l'explication de l'IA, et l'URL de
 la Pull Request. L'ouvrir dans le navigateur devant le jury.
 
-**5. (2 min) Revue humaine — merger devant le jury.**
+**5. (2 min) Revue humaine - merger devant le jury.**
 Lire le diff et l'explication de l'IA à voix haute, expliquer *pourquoi* une revue humaine reste
-obligatoire (l'IA peut se tromper — voir l'incident réel raconté dans le README §6), puis
+obligatoire (l'IA peut se tromper - voir l'incident réel raconté dans le README §6), puis
 merger la PR. Si le correctif proposé semble risqué (ex : à nouveau un passage en non-root sans
 volume adapté), c'est le moment idéal pour le dire à voix haute plutôt que de le cacher : c'est
 la preuve vivante que le garde-fou humain sert à quelque chose.
@@ -117,21 +117,21 @@ kubectl patch application vulnerable-app -n argocd --type merge -p '{"operation"
 Attendre ~1-2 min que Trivy rescanne l'image avant de commencer la démo.
 
 **Important** : avant de relancer le remédiateur, vérifier qu'aucune PR `fix/ai-remediation`
-n'est déjà ouverte (`gh pr list` ou l'onglet Pull requests sur GitHub) — sinon le script échoue
+n'est déjà ouverte (`gh pr list` ou l'onglet Pull requests sur GitHub) - sinon le script échoue
 en tentant de recréer une branche déjà existante.
 
 ## D. Limites connues et pistes d'amélioration (à mentionner en conclusion)
 
-1. **Le remédiateur ne boucle que sur `reports[0]`** (un seul rapport) — en prod, il faudrait
+1. **Le remédiateur ne boucle que sur `reports[0]`** (un seul rapport) - en prod, il faudrait
    itérer sur tous les `VulnerabilityReport` et `ConfigAuditReport` du cluster.
-2. **Déclenchement manuel** — la vraie automatisation serait un `CronJob` Kubernetes
+2. **Déclenchement manuel** - la vraie automatisation serait un `CronJob` Kubernetes
    (via `config.load_incluster_config()` + un `ServiceAccount` en lecture seule sur les CRD Trivy),
    qu'on a documenté mais pas eu le temps d'implémenter en 2 jours.
-3. **Pas de validation `--dry-run=server` avant la PR** — on l'a découvert à nos dépens :
+3. **Pas de validation `--dry-run=server` avant la PR** - on l'a découvert à nos dépens :
    le premier correctif de l'IA (passage en non-root) cassait le démarrage de nginx
    (`/var/cache/nginx` non accessible en écriture). La revue humaine l'a intercepté, mais un
    `kubectl apply --dry-run=server` automatique avant l'ouverture de la PR aurait évité l'aller-retour.
-4. **Secrets en variables d'environnement** — à remplacer par un `Secret` Kubernetes +
+4. **Secrets en variables d'environnement** - à remplacer par un `Secret` Kubernetes +
    External Secrets Operator (brique optionnelle CNCF) en production.
-5. **Pas de garde anti-doublon de PR** — vérifier qu'une PR `fix/ai-remediation` n'est pas déjà
+5. **Pas de garde anti-doublon de PR** - vérifier qu'une PR `fix/ai-remediation` n'est pas déjà
    ouverte avant d'en recréer une (voir §C).
