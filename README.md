@@ -46,9 +46,15 @@ Cluster Kubernetes managé OVHcloud (hackathon-equipe-7, région gra11)
 ├── Kyverno (policy-as-code)      ── évalue chaque ressource contre 3 policies (mode Audit)
 ├── Falco (runtime)               ── observe les syscalls, alerte sur comportement suspect
 ├── Prometheus / Grafana          ── collecte les métriques (dont trivy_image_vulnerabilities)
+├── Loki / Promtail               ── agrège les logs applicatifs de tous les namespaces
 │
-└── Remédiateur (apps/remediator/remediator.py, tourne hors cluster, en local)
-        1. lit les VulnerabilityReport (API Kubernetes)
+├── Namespaces dev / staging / prod / ai-remediation
+│     dev     = seul namespace corrigé par l'IA (Argo CD en auto-sync)
+│     staging/prod = promotion manuelle uniquement (aucune synchro automatique)
+│     ai-remediation = réservé au futur CronJob du remédiateur
+│
+└── Remédiateur (apps/remediator/remediator.py, tourne hors cluster, en local, cible dev)
+        1. lit les VulnerabilityReport du namespace dev
         2. lit le manifest actuel depuis GitHub (Git = source de vérité, jamais le cluster)
         3. envoie rapport + manifest à l'IA (AI Endpoints OVHcloud)
         4. reçoit un YAML corrigé + une explication
@@ -57,7 +63,11 @@ Cluster Kubernetes managé OVHcloud (hackathon-equipe-7, région gra11)
         6. ouvre une Pull Request GitHub, résultat du test inclus dans la description
                 │
                 ▼ revue humaine obligatoire + merge
-        Dépôt Git (GitHub) ──► Argo CD détecte le changement ──► resynchronise le cluster
+        Dépôt Git (GitHub) ──► Argo CD détecte le changement ──► resynchronise dev
+
+monitoring-console (Node.js, hors cluster, optionnel)
+        dashboard qui interroge Argo CD + Prometheus + Loki pour afficher, par namespace,
+        le statut GitOps, les métriques et les logs applicatifs — voir monitoring-console/README.md
 ```
 
 ```mermaid
@@ -68,20 +78,25 @@ flowchart TD
         Kyverno["Kyverno\n(policy-as-code, mode Audit)"]
         Falco["Falco\n(détection runtime)"]
         Prom["Prometheus / Grafana\n(métriques)"]
-        App["vulnerable-app\n(workload cible)"]
+        LokiNode["Loki / Promtail\n(logs applicatifs)"]
+        Dev["namespace dev\n(corrigé par l'IA, auto-sync)"]
+        StagingProd["namespaces staging / prod\n(promotion manuelle uniquement)"]
 
-        ArgoCD -->|déploie & surveille| App
-        Trivy -->|scanne| App
-        Kyverno -->|évalue| App
-        Falco -->|observe les syscalls| App
+        ArgoCD -->|déploie & surveille| Dev
+        ArgoCD -.->|promotion manuelle| StagingProd
+        Trivy -->|scanne| Dev
+        Kyverno -->|évalue| Dev
+        Falco -->|observe les syscalls| Dev
         Trivy -->|expose les métriques| Prom
+        Dev -->|logs| LokiNode
     end
 
     Repo[("Dépôt Git\nGitHub")]
-    Remed["Remédiateur IA\napps/remediator/remediator.py\n(hors cluster, en local)"]
+    Remed["Remédiateur IA\napps/remediator/remediator.py\n(hors cluster, en local, cible dev)"]
     AI["AI Endpoints OVHcloud\n(Qwen2.5-VL-72B-Instruct)"]
     Staging["Namespace de test ephemere\n(remediator-staging-*, distinct\ndu namespace persistant 'staging')"]
     Human(("Revue humaine"))
+    Console["monitoring-console\n(Node.js, hors cluster, optionnel)"]
 
     Trivy -.->|VulnerabilityReport| Remed
     Repo -.->|lit le manifest actuel| Remed
@@ -94,7 +109,11 @@ flowchart TD
     Repo --> Human
     Human -->|merge| Repo
     Repo -.->|détecte le nouveau commit| ArgoCD
-    ArgoCD -->|resynchronise| App
+    ArgoCD -->|resynchronise| Dev
+
+    ArgoCD -.->|statut GitOps| Console
+    Prom -.->|métriques| Console
+    LokiNode -.->|logs| Console
 ```
 
 *(Ce diagramme est au format [Mermaid](https://mermaid.js.org/) — GitHub le rend automatiquement
@@ -115,6 +134,12 @@ jamais une modification silencieuse du cluster.
   de notre workload volontairement vulnérable - choix pragmatique pour la durée du hackathon.
 - **Falco avec driver `modern_ebpf`** : seul driver ne nécessitant pas de compilation de module
   noyau, donc compatible avec un cluster managé.
+- **Loki plutôt qu'ELK/Fluentd** : projet CNCF (Incubating) de l'écosystème Grafana, cohérent
+  avec Prometheus/Grafana déjà en place ; indexe uniquement les labels (pas le contenu), donc
+  léger à faire tourner sur un cluster de hackathon.
+- **monitoring-console (Node.js, hors cluster)** : petit dashboard qui agrège Argo CD +
+  Prometheus + Loki par namespace — pas une brique de sécurité, mais un outil de démonstration
+  pour visualiser en un coup d'œil l'état GitOps/métriques/logs de `dev`/`staging`/`prod`.
 - **Revue humaine obligatoire avant merge** : le garde-fou central de toute l'architecture
   (voir les incidents réels racontés en §6).
 
@@ -238,6 +263,8 @@ Ensuite, `source .env` dans un terminal exporte tout d'un coup :
 | Grafana | `kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80` | http://localhost:3000 | `admin` | `$GRAFANA_ADMIN_PASSWORD` |
 | Prometheus | `kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090` | http://localhost:9090 | — | — |
 | Falco UI | `kubectl port-forward svc/falco-falcosidekick-ui -n falco 2802:2802` | http://localhost:2802 | `$FALCO_UI_USER` | `$FALCO_UI_PASSWORD` |
+| Loki | `kubectl port-forward svc/loki -n monitoring 3100:3100` | http://localhost:3100 | — | — |
+| monitoring-console | `cd monitoring-console/backend && npm install && npm start` (nécessite les tunnels Argo CD/Prometheus/Loki actifs) | http://localhost:4000 | — | — |
 
 **Rapports de sécurité** (pas d'UI dédiée - ce sont des CRD Kubernetes natives, consultables
 avec `kubectl` depuis n'importe où) :
