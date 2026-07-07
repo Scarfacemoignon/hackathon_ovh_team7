@@ -167,13 +167,25 @@ infra/
     policies.yaml
     prometheus.yaml
     falco.yaml
+    loki.yaml                      # Loki + Promtail (logs applicatifs, pour monitoring-console)
   namespaces/namespaces.yaml       # déclaration des 4 namespaces (dev/staging/prod/ai-remediation)
 policies/                          # les 3 ClusterPolicy Kyverno
 docs/
-  architecture.md                  # rapport d'architecture + tableau CNCF + vision SLA/staging
+  rapport-architecture.md          # livrable officiel du brief : rapport concis (1-2 pages) + tableau CNCF
+  architecture.md                  # version détaillée (référence technique/Q&A) + vision SLA/staging
   demo-script.md                   # script de démo complet (backstage, rejeu, déroulé, limites)
   team-testing-guide.md            # guide pour qu'un coéquipier valide la stack sur son poste
   commands-reference.md            # aide-mémoire de toutes les commandes utilisées
+monitoring-console/                # dashboard optionnel (Node.js, hors cluster) - voir monitoring-console/README.md
+  backend/
+    server.js                      # API Express : agrège Argo CD + Prometheus + Loki par namespace
+    clients/                       # un client par source (argocd.js, loki.js, prometheus.js)
+    datasources/                   # logique métier par type de donnée (logs, métriques, gitops, commandes IA)
+    package.json, .env.example
+    node_modules/                  # jamais committé, régénéré via npm install
+  frontend/                        # SPA vanilla JS (index.html, app.js, style.css), servie par le backend
+  tools/fake-infra.js              # faux Loki/Prometheus/Argo CD pour développer sans cluster
+  README.md
 root-app.yaml                      # Application Argo CD racine (App-of-Apps)
 .env.example                       # modèle de variables d'environnement (committé, sans secrets)
 .env                                # variables reelles (ignoré par Git, jamais commité)
