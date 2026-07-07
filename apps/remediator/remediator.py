@@ -127,8 +127,8 @@ def ask_ai_for_fix(ai: OpenAI, report_summary: str, current_manifest: str,
 # ----------- 3bis. Valider le correctif dans un namespace de staging ephemere -----------
 
 def validate_in_staging(fixed_yaml: str, timeout_s: int = STAGING_TIMEOUT_S) -> tuple[bool, str]:
-    """Deploie le manifest corrige dans un namespace jetable, isole du namespace 'demo'
-    de production, AVANT meme d'ouvrir la PR. Rend un verdict + les logs du pod de test,
+    """Deploie le manifest corrige dans un namespace jetable, isole du namespace TARGET_NAMESPACE
+    (dev en temps normal), AVANT meme d'ouvrir la PR. Rend un verdict + les logs du pod de test,
     pour que la revue humaine sache exactement quoi verifier. Nettoie toujours derriere lui."""
     manifest = yaml.safe_load(fixed_yaml)
     ns = f"remediator-staging-{uuid.uuid4().hex[:8]}"
