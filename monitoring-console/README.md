@@ -91,3 +91,25 @@ GET /api/namespaces/:namespace/gitops
   remonte en **502** avec le message d'erreur, au lieu de faire planter le
   process — à surveiller si vous manquez de temps pour valider le comportement
   réseau réel avant une démo.
+
+## État après intégration dans le dépôt principal
+
+Testé en local le 2026-07-07, deux corrections apportées :
+1. **`dotenv` n'était jamais chargé** dans `server.js` — le `.env` était donc
+   silencieusement ignoré et `ARGOCD_TOKEN` jamais transmis (401 systématique
+   sur `/api/namespaces/:namespace/gitops`). Corrigé (`import "dotenv/config"`
+   + dépendance ajoutée à `package.json`).
+2. **`/api/summary` plantait entièrement** dès qu'une seule source (Loki, non
+   déployée sur ce cluster) échouait, à cause d'un `Promise.all` sans
+   isolation d'erreur — alors que les routes individuelles dégradaient déjà
+   proprement en 502. Corrigé avec un helper `safe()` qui isole chaque source.
+
+Avec ces deux correctifs : `/api/summary`, `/api/namespaces/:namespace/gitops`
+et `/metrics` fonctionnent et reflètent l'état réel du cluster (testé sur
+`dev`/`staging`/`prod`/`ai-remediation`). `/logs` et `/ai-command-logs`
+restent en 502 tant que **Loki n'est pas déployé** sur ce cluster (voir
+`docs/architecture.md` — non fait par manque de temps pendant le hackathon).
+
+**Important** : `ARGOCD_URL` doit être en `https://` (pas `http://`), le
+tunnel `kubectl port-forward svc/argocd-server -n argocd 8080:443` sert du
+TLS auto-signé sur ce port. Voir `.env.example` mis à jour.

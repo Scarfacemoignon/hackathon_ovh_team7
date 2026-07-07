@@ -324,3 +324,5 @@ remédiateur teste chaque correctif dans un namespace de staging éphémère ava
 - `docs/team-testing-guide.md` - guide pour qu'un coéquipier vérifie la stack sur son poste
 - `docs/commands-reference.md` - aide-mémoire de toutes les commandes utilisées pendant le hackathon
 - `apps/remediator/README.md` - documentation détaillée du remédiateur (dont le test de staging)
+- `monitoring-console/README.md` - dashboard optionnel (Node.js, hors cluster) montrant l'état
+  GitOps + métriques par namespace ; `cd monitoring-console/backend && npm install && npm start`
