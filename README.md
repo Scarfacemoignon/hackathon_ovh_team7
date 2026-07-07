@@ -319,7 +319,10 @@ remédiateur teste chaque correctif dans un namespace de staging éphémère ava
 
 ## 9. Documentation complémentaire
 
-- `docs/architecture.md` - rapport d'architecture complet (1-2 pages) + tableau CNCF + vision SLA/staging
+- `docs/rapport-architecture.md` - **le livrable officiel demandé par le brief** : rapport
+  d'architecture concis (1-2 pages) + tableau récapitulatif du statut CNCF
+- `docs/architecture.md` - version détaillée et complète (référence technique/Q&A, plus longue
+  que 1-2 pages) : mêmes sujets, incidents réels, vision SLA/staging développée
 - `docs/demo-script.md` - script de démo complet de A à Z (backstage, déroulé minuté, rejeu)
 - `docs/team-testing-guide.md` - guide pour qu'un coéquipier vérifie la stack sur son poste
 - `docs/commands-reference.md` - aide-mémoire de toutes les commandes utilisées pendant le hackathon
