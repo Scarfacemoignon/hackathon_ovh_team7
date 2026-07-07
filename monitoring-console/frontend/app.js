@@ -220,6 +220,12 @@ function logRow(log) {
 }
 
 function errorBlock(err) {
+  // Un 502 veut dire que le backend a repondu, mais qu'une source amont
+  // (Loki/Prometheus/Argo CD) a echoue -- pas la meme chose qu'un backend
+  // injoignable (erreur reseau, sans code HTTP du tout).
+  if (/HTTP 502/.test(err.message)) {
+    return `<div class="empty" style="color:var(--fail)">Erreur : ${escapeHtml(err.message)}<br><br>Le backend fonctionne, mais une source de donnees amont (Loki, Prometheus ou Argo CD) est indisponible ou injoignable pour cette requete. Voir monitoring-console/README.md.</div>`;
+  }
   return `<div class="empty" style="color:var(--fail)">Erreur : ${escapeHtml(err.message)}<br><br>Le backend est-il lancé sur ${API_BASE || location.origin} ?</div>`;
 }
 
