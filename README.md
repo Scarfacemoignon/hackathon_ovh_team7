@@ -248,11 +248,12 @@ casser la production silencieusement.
 
 ## 8. Limites connues
 
-Voir `docs/architecture.md` §6 et `docs/demo-script.md` pour le détail : déclenchement manuel
-du remédiateur (une vraie prod utiliserait un `CronJob`), pas de validation
-`kubectl apply --dry-run=server` avant l'ouverture de la PR, secrets passés en variables
+Voir `docs/architecture.md` §6-7 et `docs/demo-script.md` §D pour le détail : déclenchement
+manuel du remédiateur (une vraie prod utiliserait un `CronJob`), secrets passés en variables
 d'environnement plutôt que via un `Secret` Kubernetes + External Secrets Operator, un seul
-rapport traité par exécution.
+rapport traité par exécution. La validation avant merge, elle, est réellement implémentée : le
+remédiateur teste chaque correctif dans un namespace de staging éphémère avant d'ouvrir la PR
+(voir `apps/remediator/README.md` et `docs/architecture.md` §7).
 
 ## 9. Documentation complémentaire
 
