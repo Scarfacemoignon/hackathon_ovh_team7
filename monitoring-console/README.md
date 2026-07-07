@@ -106,9 +106,17 @@ Testé en local le 2026-07-07, deux corrections apportées :
 
 Avec ces deux correctifs : `/api/summary`, `/api/namespaces/:namespace/gitops`
 et `/metrics` fonctionnent et reflètent l'état réel du cluster (testé sur
-`dev`/`staging`/`prod`/`ai-remediation`). `/logs` et `/ai-command-logs`
-restent en 502 tant que **Loki n'est pas déployé** sur ce cluster (voir
-`docs/architecture.md` — non fait par manque de temps pendant le hackathon).
+`dev`/`staging`/`prod`/`ai-remediation`).
+
+**Loki est maintenant déployé** (`infra/argocd-apps/loki.yaml`, chart
+`grafana/loki-stack` avec Promtail) — `/logs` fonctionne aussi. Point
+important : Promtail ne pousse que les **nouvelles** lignes de log depuis son
+démarrage (pas l'historique) — un pod sans trafic récent peut donc ne pas
+encore apparaître dans `/loki/api/v1/label/namespace/values` tant qu'il n'a
+rien écrit de neuf sur stdout/stderr. `/ai-command-logs` reste vide : le
+remédiateur tourne aujourd'hui en local, pas dans le cluster, donc ses logs
+ne passent pas par Promtail (voir `docs/architecture.md` §7.4, CronJob
+`ai-remediation` documenté comme prochaine étape).
 
 **Important** : `ARGOCD_URL` doit être en `https://` (pas `http://`), le
 tunnel `kubectl port-forward svc/argocd-server -n argocd 8080:443` sert du
