@@ -3,3 +3,11 @@ __pycache__/
 *.pyc
 .env
 *.env
+
+# Monitoring console local secrets
+monitoring-console/backend/.env
+monitoring-console/**/.env
+monitoring-console/**/.env.local
+monitoring-console/**/.env.production
+monitoring-console/**/secrets/
+monitoring-console/**/tokens/

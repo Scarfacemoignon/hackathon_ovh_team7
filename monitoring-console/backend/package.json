@@ -1,0 +1,14 @@
+{
+  "name": "monitoring-console-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Backend du monitoring-console : agrege logs applicatifs, commandes IA, metriques et statut GitOps par namespace.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

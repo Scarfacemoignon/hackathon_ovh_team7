@@ -1,0 +1,26 @@
+{
+  "dev": {
+    "pod_count": 2,
+    "restarts_total": 4,
+    "cpu_usage_rate": 0.18,
+    "memory_usage_ratio": 0.41
+  },
+  "staging": {
+    "pod_count": 2,
+    "restarts_total": 1,
+    "cpu_usage_rate": 0.26,
+    "memory_usage_ratio": 0.82
+  },
+  "prod": {
+    "pod_count": 4,
+    "restarts_total": 0,
+    "cpu_usage_rate": 0.34,
+    "memory_usage_ratio": 0.55
+  },
+  "ai-remediation": {
+    "pod_count": 1,
+    "restarts_total": 0,
+    "cpu_usage_rate": 0.05,
+    "memory_usage_ratio": 0.12
+  }
+}
