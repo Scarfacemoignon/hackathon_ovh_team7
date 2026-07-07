@@ -22,16 +22,24 @@ Cluster Kubernetes OVHcloud (hackathon-equipe-7, gra11)
 ├── Kyverno (policy-as-code)      ── évalue chaque ressource contre 3 policies (mode Audit)
 ├── Falco (runtime)               ── observe les syscalls, alerte sur comportement suspect
 ├── Prometheus / Grafana          ── collecte les métriques (dont trivy_image_vulnerabilities)
+├── Loki / Promtail               ── agrège les logs applicatifs de tous les namespaces
 │
-└── Remédiateur (apps/remediator/remediator.py, hors cluster)
-        1. lit les VulnerabilityReport (API Kubernetes)
+├── Namespaces dev / staging / prod / ai-remediation (voir §7.3)
+│     dev = seul namespace corrige par l'IA ; staging/prod = promotion manuelle
+│
+└── Remédiateur (apps/remediator/remediator.py, hors cluster, cible dev)
+        1. lit les VulnerabilityReport du namespace dev
         2. lit le manifest actuel depuis GitHub (source de vérité = Git, pas le cluster)
         3. envoie rapport + manifest à l'IA (AI Endpoints OVHcloud, Qwen2.5-VL-72B-Instruct)
         4. reçoit un YAML corrigé + une explication
-        5. ouvre une Pull Request GitHub
+        5. teste le correctif dans un namespace ephemere avant toute PR (voir §7.1)
+        6. ouvre une Pull Request GitHub
                 │
                 ▼ revue humaine + merge
-        Dépôt Git (GitHub) ──► Argo CD détecte le changement ──► resynchronise le cluster
+        Dépôt Git (GitHub) ──► Argo CD détecte le changement ──► resynchronise dev
+
+monitoring-console (Node.js, hors cluster, optionnel) : dashboard qui interroge Argo CD +
+Prometheus + Loki pour afficher le statut GitOps, les métriques et les logs par namespace.
 ```
 
 ## 3. Flux détaillé de la boucle
@@ -70,6 +78,13 @@ Cluster Kubernetes OVHcloud (hackathon-equipe-7, gra11)
   Un choix pragmatique pour la durée du hackathon, à durcir en production.
 - **Falco avec driver `modern_ebpf`** : seul driver ne nécessitant pas de compilation de module
   noyau, donc compatible avec un cluster managé où l'on ne contrôle pas le kernel des nodes.
+- **Loki plutôt qu'ELK/Fluentd** : projet CNCF Incubating de l'écosystème Grafana, cohérent avec
+  Prometheus/Grafana déjà en place ; n'indexe que les labels (pas le texte complet des logs),
+  donc léger à faire tourner sur un cluster de la taille d'un hackathon.
+- **monitoring-console (Node.js, hors cluster)** : petit dashboard, pas une brique de sécurité,
+  qui agrège Argo CD + Prometheus + Loki par namespace pour visualiser en un coup d'œil que
+  l'IA n'agit que sur `dev` (jamais `staging`/`prod`) — utile pour la démonstration, développé
+  en collaboration avec un membre de l'équipe.
 - **AI Endpoints OVHcloud, modèle Qwen2.5-VL-72B-Instruct** : API compatible OpenAI (changement
   de `base_url` uniquement), modèle imposé par la disponibilité du catalogue au moment du
   hackathon. Prompt à `temperature: 0.2` pour privilégier la fiabilité du YAML plutôt que la
@@ -88,6 +103,7 @@ Cluster Kubernetes OVHcloud (hackathon-equipe-7, gra11)
 | Kyverno | Policy-as-code | Graduated |
 | Falco | Détection de menaces runtime | Graduated |
 | Prometheus | Observabilité & métriques | Graduated |
+| Loki | Agrégation de logs applicatifs | Incubating |
 | AI Endpoints OVHcloud | Couche d'IA générative | OVHcloud (hors CNCF - assumé dans le brief) |
 
 ## 6. Limites et pistes d'amélioration
