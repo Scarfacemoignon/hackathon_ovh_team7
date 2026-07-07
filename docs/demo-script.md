@@ -23,11 +23,27 @@ kubectl port-forward svc/argocd-server -n argocd 8080:443
 kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80
 kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090
 kubectl port-forward svc/falco-falcosidekick-ui -n falco 2802:2802
+kubectl port-forward svc/loki -n monitoring 3100:3100   # optionnel, requis seulement pour monitoring-console
 ```
 Si une page ne charge pas alors que le process tourne encore (`ps aux | grep port-forward`),
 c'est un tunnel mort après une coupure réseau — `curl -sk -o /dev/null -w "%{http_code}\n"
 http://localhost:3000` renverra `000`. Solution : `pkill -f "kubectl port-forward"` puis
-relancer les 4 commandes ci-dessus (voir `docs/commands-reference.md` §11).
+relancer les 5 commandes ci-dessus (voir `docs/commands-reference.md` §11).
+
+**3bis. (Optionnel) Lancer la console de monitoring** — dashboard visuel montrant que l'IA
+n'agit que sur `dev`, jamais `staging`/`prod` ; utile en backup visuel pour la conclusion SLA ou
+si le jury pose des questions dessus, pas indispensable au déroulé chronométré :
+```bash
+cd monitoring-console/backend
+NODE_TLS_REJECT_UNAUTHORIZED=0 npm start   # nécessite un .env local, voir monitoring-console/README.md
+```
+Ouvrir http://localhost:4000. Si `/logs` est vide pour `dev`, générer un peu de trafic
+(Promtail ne pousse que les logs écrits *après* son démarrage) :
+```bash
+POD=$(kubectl get pods -n dev -o jsonpath='{.items[0].metadata.name}')
+kubectl port-forward "$POD" -n dev 8888:80 &
+curl -s http://localhost:8888/ && curl -s http://localhost:8888/inconnu
+```
 
 **4. Vérifier que tout est vert.**
 ```bash
@@ -77,6 +93,17 @@ Attendre ~1-2 min que Trivy rescanne l'image avant de continuer — vérifier av
 **Important** : avant de relancer le remédiateur, vérifier qu'aucune PR `fix/ai-remediation`
 n'est déjà ouverte (`gh pr list` ou l'onglet Pull requests sur GitHub) — sinon le script échoue
 en tentant de recréer une branche déjà existante.
+
+**Si `staging`/`prod` ont été synchronisés pendant une répétition** (test manuel ou via
+l'interface Argo CD), les remettre en attente pour que la promotion en direct (§C.6) reste un
+vrai moment "live" et pas un onglet déjà vert. Le contenu Git déjà promu n'est **pas** perdu —
+seule la ressource déployée est supprimée :
+```bash
+kubectl delete deployment vulnerable-web -n staging --ignore-not-found
+kubectl delete deployment vulnerable-web -n prod --ignore-not-found
+```
+Vérifier ensuite `kubectl get applications -n argocd` : `vulnerable-app-staging` et
+`vulnerable-app-prod` doivent revenir à `OutOfSync`/`Missing`.
 
 ## C. Déroulé devant le jury (10 minutes)
 
@@ -129,14 +156,21 @@ kubectl get pods -n dev -w
 Montrer le nouveau pod démarrer, l'ancien être supprimé (`prune`), et dans Grafana la courbe
 `trivy_image_vulnerabilities{severity="Critical"}` chuter au scan suivant. Vérifier aussi
 `kubectl get policyreports -n dev` : 0 violation. Mentionner ici, si le temps le permet, que
-`vulnerable-app-staging`/`-prod` existent déjà et n'attendent qu'une promotion manuelle
-(`argocd app sync vulnerable-app-staging`) — bonne transition vers la conclusion SLA/staging.
+`vulnerable-app-staging`/`-prod` existent déjà et n'attendent qu'une promotion manuelle —
+synchro en direct devant le jury :
+```bash
+kubectl patch application vulnerable-app-staging -n argocd --type merge -p '{"operation":{"sync":{}}}'
+```
+Bonne transition vers la conclusion SLA/staging (voir aussi `docs/commands-reference.md` §12
+pour la procédure de promotion complète avec copie du manifest).
 
 **7. (1 min) Conclusion.**
-Tableau récapitulatif CNCF (voir `docs/architecture.md`), limites connues et pistes
-d'amélioration (voir §D). Si le jury relance sur le SLA ou le risque de casser la prod, enchaîner
-directement sur `docs/architecture.md` §7 (test de staging déjà implémenté + vision canary/Argo
-Rollouts) plutôt que d'improviser.
+Tableau récapitulatif CNCF (voir `docs/rapport-architecture.md` — **le livrable officiel du
+brief**, 1-2 pages), limites connues et pistes d'amélioration (voir §D). Si le jury relance sur
+le SLA ou le risque de casser la prod, enchaîner directement sur `docs/architecture.md` §7 (test
+de staging déjà implémenté + vision canary/Argo Rollouts) plutôt que d'improviser. La console de
+monitoring (§A.3bis, http://localhost:4000) peut servir d'appui visuel si le jury demande une
+preuve que l'IA n'agit que sur `dev`.
 
 ## D. Limites connues et pistes d'amélioration (à mentionner en conclusion)
 
