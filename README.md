@@ -337,7 +337,7 @@ une automatisation à 100 % sans contrôle aurait pu casser la production silenc
 
 ## 8. Limites connues
 
-Voir `docs/architecture.md` §6-7 et `docs/demo-script.md` §D pour le détail : déclenchement
+Voir `docs/architecture.md` §6-7 et `docs/demo-script.md` §E pour le détail : déclenchement
 manuel du remédiateur (une vraie prod utiliserait un `CronJob`), secrets passés en variables
 d'environnement plutôt que via un `Secret` Kubernetes + External Secrets Operator, un seul
 rapport traité par exécution. La validation avant merge, elle, est réellement implémentée : le

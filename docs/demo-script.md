@@ -3,6 +3,10 @@
 Équipe 7 — Hackathon OVHcloud x Ynov. Cluster : `hackathon-equipe-7` (gra11).
 Dépôt : https://github.com/Scarfacemoignon/hackathon_ovh_team7
 
+Toutes les commandes sont en bash (poste Linux/macOS). Sous Windows, adapter avec PowerShell
+(`Get-Content` au lieu de `cat`, `$env:VAR` au lieu de `export`, etc.) — le principe reste
+identique.
+
 ## A. Backstage — à faire 15-20 min avant de passer devant le jury
 
 **1. Vérifier l'accès au cluster.**
@@ -49,11 +53,23 @@ curl -s http://localhost:8888/ && curl -s http://localhost:8888/inconnu
 ```bash
 kubectl get applications -n argocd -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status
 ```
-Toutes les Applications (`root`, `namespaces`, `vulnerable-app-dev`, `trivy-operator`,
-`kyverno`, `policies`, `kube-prometheus-stack`, `falco`) doivent être `Synced` / `Healthy`.
-`vulnerable-app-staging` et `vulnerable-app-prod` restent volontairement `OutOfSync`/`Missing`
-tant qu'on ne les a pas synchronisées à la main — c'est le comportement attendu (promotion
-manuelle), pas une panne.
+**Sortie attendue** (11 Applications) :
+```
+NAME                     SYNC        HEALTH
+falco                    Synced      Healthy
+kube-prometheus-stack    Synced      Healthy
+kyverno                  OutOfSync   Healthy      <- normal, CRD nouvelle generation non utilisees, voir README
+loki                     Synced      Healthy
+namespaces               Synced      Healthy
+policies                 Synced      Healthy
+root                     Synced      Healthy
+trivy-operator           Synced      Healthy
+vulnerable-app-dev       Synced      Healthy
+vulnerable-app-prod      OutOfSync   Missing      <- normal, promotion manuelle uniquement
+vulnerable-app-staging   OutOfSync   Missing      <- normal, promotion manuelle uniquement
+```
+Seuls `kyverno` (OutOfSync inoffensif), `vulnerable-app-prod` et `vulnerable-app-staging`
+(Missing volontaire) s'écartent de `Synced`/`Healthy` — tout le reste doit être vert.
 
 **5. Se connecter à chaque outil pour confirmer les mots de passe** (voir README §4) :
 - Argo CD : https://localhost:8080 (`admin` / `$ARGOCD_ADMIN_PASSWORD`)
@@ -87,6 +103,22 @@ Argo CD resynchronise automatiquement (`prune`+`selfHeal`), ou forcer :
 ```bash
 kubectl patch application vulnerable-app-dev -n argocd --type merge -p '{"operation":{"sync":{}}}'
 ```
+
+**Vérifier visuellement que l'état vulnérable est bien en place** (réflexe à avoir avant
+d'aller plus loin, pas seulement se fier au statut Argo CD) :
+```bash
+cat apps/vulnerable-app/dev/deployment.yaml
+```
+Tu dois voir exactement ces éléments volontairement vulnérables :
+```yaml
+image: nginx:1.14
+securityContext:
+  privileged: true
+  runAsUser: 0
+```
+C'est le point de départ qui prouve, en fin de démo, que la chaîne a corrigé quelque chose de
+réel — sans cette vérification, impossible de garantir que le "avant/après" sera visible.
+
 Attendre ~1-2 min que Trivy rescanne l'image avant de continuer — vérifier avec
 `kubectl get vulnerabilityreports -n dev` que les CVE CRITICAL/HIGH sont bien revenues.
 
@@ -109,70 +141,125 @@ Vérifier ensuite `kubectl get applications -n argocd` : `vulnerable-app-staging
 
 *Prérequis : §A et §B déjà faits, cluster confirmé en état vulnérable.*
 
-**1. (1 min) Tout part de Git.**
-Montrer le dépôt GitHub (structure `apps/`, `infra/argocd-apps/`, `policies/`, `docs/`) et l'UI
-Argo CD : les Applications toutes `Synced`/`Healthy`, gérées par le pattern App-of-Apps
-(`root-app.yaml` → `infra/argocd-apps/`). Expliquer en une phrase le modèle *pull* : Argo CD va
-chercher les changements dans Git, aucun credential cluster ne sort vers l'extérieur.
+### 1. (1 min) Tout part de Git — l'architecture GitOps
 
-**2. (1 min) L'app vulnérable et sa détection.**
+Ouvrir GitHub et montrer la structure : `apps/`, `infra/`, `policies/`, `docs/`, `root-app.yaml`.
+
+> **Phrase à dire** : *"Tout part de Git. Le dépôt est la source de vérité. Argo CD surveille
+> les manifests et applique l'état déclaré dans le cluster."*
+
+Puis montrer Argo CD (UI ou commande) :
 ```bash
+kubectl get applications -n argocd
+```
+**Objectif visuel** : `root`, `namespaces`, `vulnerable-app-dev`, `trivy-operator`, `kyverno`,
+`policies`, `kube-prometheus-stack`, `falco` — tous visibles et gérés par le pattern
+App-of-Apps (`root-app.yaml` → `infra/argocd-apps/`).
+
+### 2. (1 min) L'app vulnérable et sa détection
+
+```bash
+kubectl get pods -n dev
 kubectl get vulnerabilityreports -n dev
 kubectl get configauditreports -n dev
-```
-Montrer le nombre de CVE CRITICAL/HIGH sur `nginx:1.14`, et dans Grafana le graphique
-`sum(trivy_image_vulnerabilities{severity="Critical"})`.
-
-**3. (1 min) Violation Kyverno + alerte Falco en direct.**
-```bash
 kubectl get policyreports -n dev
+```
+Montrer le nombre de CVE CRITICAL/HIGH sur `nginx:1.14` (27 CRITICAL / 50 HIGH dans nos tests),
+et dans Grafana le graphique `sum(trivy_image_vulnerabilities{severity="Critical"})`.
+
+> **Phrase à dire** : *"Notre workload de départ est volontairement vulnérable : image nginx
+> ancienne, conteneur privilégié, exécution root et absence de limites de ressources."*
+
+### 3. (1 min) Violation Kyverno + détection runtime Falco en direct
+
+```bash
 kubectl exec -it deploy/vulnerable-web -n dev -- sh -c "cat /etc/shadow"
-kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=20 | grep -i warning
+kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=30 | grep -i warning
 ```
 La lecture doit **réussir** (le conteneur tourne encore en root à ce stade) et une alerte Falco
 fraîche doit apparaître dans la foulée. Montrer aussi l'alerte dans la Falco UI
 (http://localhost:2802) — moment très visuel.
 
-**4. (2 min) Lancer le remédiateur — la PR s'ouvre en direct.**
+> **Phrase à dire** : *"Trivy et Kyverno détectent les vulnérabilités et mauvaises
+> configurations. Falco complète la chaîne avec de la détection runtime."*
+
+### 4. (2 min) Lancer le remédiateur — la PR s'ouvre en direct
+
 ```bash
 cd apps/remediator
 source ../../.env
 .venv/bin/python remediator.py
 ```
-Le script affiche : le rapport résumé lu depuis le cluster, l'explication de l'IA, et l'URL de
-la Pull Request. L'ouvrir dans le navigateur devant le jury.
+**Résultat attendu, dans l'ordre** : lecture des rapports Trivy/Kyverno → appel aux AI Endpoints
+OVHcloud → génération d'un YAML corrigé → test dans un namespace de staging éphémère → création
+d'une Pull Request GitHub, avec son URL affichée en dernière ligne. L'ouvrir dans le navigateur
+devant le jury.
 
-**5. (2 min) Revue humaine — merger devant le jury.**
-Lire le diff et l'explication de l'IA à voix haute, expliquer *pourquoi* une revue humaine reste
-obligatoire (l'IA peut se tromper — voir l'incident réel raconté dans le README §6 : un
-correctif a déjà cassé le démarrage de nginx, un autre a proposé un tag `:latest` que notre
-propre policy Kyverno interdit), puis merger la PR.
+### 5. (2 min) Revue humaine — lire et merger la PR devant le jury
 
-**6. (2 min) Argo CD resynchronise, cluster corrigé.**
+**Checklist à vérifier dans le diff, à voix haute :**
+- [ ] image `nginx` mise à jour (plus l'ancienne version vulnérable)
+- [ ] `privileged: true` supprimé
+- [ ] utilisateur non-root (`runAsUser` ≠ 0, ou `runAsNonRoot: true`)
+- [ ] `resources.requests`/`resources.limits` ajoutés
+- [ ] volumes `emptyDir` présents si non-root (sinon le pod plantera au démarrage — incident
+  réel rencontré, voir README §6)
+- [ ] description de la PR lisible : explication de l'IA + résultat du test de staging éphémère
+
+> **Phrase à dire** : *"L'IA ne modifie jamais directement le cluster ni la production. Elle
+> propose un correctif dans GitHub. La revue humaine reste obligatoire."* Développer avec
+> l'incident réel (README §6) si le temps le permet : un correctif a déjà cassé le démarrage de
+> nginx, un autre a proposé un tag `:latest` que notre propre policy Kyverno interdit — deux
+> preuves concrètes que ce garde-fou n'est pas cosmétique.
+
+Merger la PR.
+
+### 6. (2 min) Argo CD resynchronise, cluster corrigé
+
 ```bash
-cd ~/Desktop/"Hackathon-Challenge OVH"/hackathon_ovh_team7
 kubectl get pods -n dev -w
 ```
-Montrer le nouveau pod démarrer, l'ancien être supprimé (`prune`), et dans Grafana la courbe
-`trivy_image_vulnerabilities{severity="Critical"}` chuter au scan suivant. Vérifier aussi
-`kubectl get policyreports -n dev` : 0 violation. Mentionner ici, si le temps le permet, que
-`vulnerable-app-staging`/`-prod` existent déjà et n'attendent qu'une promotion manuelle —
-synchro en direct devant le jury :
+Montrer le nouveau pod démarrer, l'ancien être supprimé (`prune`).
+```bash
+kubectl get applications -n argocd
+kubectl get policyreports -n dev
+kubectl get vulnerabilityreports -n dev
+```
+**Objectif** : `vulnerable-app-dev` reste `Synced`/`Healthy`, `kubectl get policyreports -n dev`
+montre 0 violation, et le scan Trivy suivant confirme la correction (objectif : CVE
+CRITICAL/HIGH passées de plusieurs dizaines à **0/0**). Montrer aussi dans Grafana la courbe
+`trivy_image_vulnerabilities{severity="Critical"}` chuter.
+
+> **Phrase à dire** : *"Après merge, Argo CD détecte le nouveau commit et resynchronise
+> automatiquement le cluster. La correction passe par Git, pas par une modification manuelle."*
+
+Si le temps le permet, enchaîner sur la promotion manuelle en direct :
 ```bash
 kubectl patch application vulnerable-app-staging -n argocd --type merge -p '{"operation":{"sync":{}}}'
 ```
-Bonne transition vers la conclusion SLA/staging (voir aussi `docs/commands-reference.md` §12
-pour la procédure de promotion complète avec copie du manifest).
+(voir aussi `docs/commands-reference.md` §12 pour la procédure de promotion complète avec copie
+du manifest vers `staging` puis `prod`).
 
-**7. (1 min) Conclusion.**
+### 7. (1 min) Conclusion
+
 Tableau récapitulatif CNCF (voir `docs/rapport-architecture.md` — **le livrable officiel du
-brief**, 1-2 pages), limites connues et pistes d'amélioration (voir §D). Si le jury relance sur
+brief**, 1-2 pages), limites connues et pistes d'amélioration (voir §E). Si le jury relance sur
 le SLA ou le risque de casser la prod, enchaîner directement sur `docs/architecture.md` §7 (test
 de staging déjà implémenté + vision canary/Argo Rollouts) plutôt que d'improviser. La console de
 monitoring (§A.3bis, http://localhost:4000) peut servir d'appui visuel si le jury demande une
 preuve que l'IA n'agit que sur `dev`.
 
-## D. Limites connues et pistes d'amélioration (à mentionner en conclusion)
+## D. Message de démo condensé (à tenir prêt si le fil se perd)
+
+*"Nous partons d'un workload volontairement vulnérable dans `dev`. Trivy détecte les CVE,
+Kyverno détecte les mauvaises pratiques Kubernetes, Falco détecte les comportements runtime
+suspects. Notre remédiateur lit ces rapports, interroge l'IA OVHcloud, récupère un YAML
+corrigé, teste ce correctif dans un namespace éphémère, puis ouvre une Pull Request. Un humain
+relit et merge. Argo CD resynchronise ensuite le cluster depuis Git. L'IA ne touche jamais
+directement `staging` ou `prod` : elle est confinée à `dev`, et la production reste protégée
+par une promotion manuelle."*
+
+## E. Limites connues et pistes d'amélioration (à mentionner en conclusion)
 
 1. **Le remédiateur ne boucle que sur `reports[0]`** (un seul rapport) — en prod, il faudrait
    itérer sur tous les `VulnerabilityReport` et `ConfigAuditReport` du cluster.

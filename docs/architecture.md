@@ -108,7 +108,7 @@ Prometheus + Loki pour afficher le statut GitOps, les métriques et les logs par
 
 ## 6. Limites et pistes d'amélioration
 
-Voir `docs/demo-script.md` §D pour le détail (déclenchement manuel plutôt que CronJob, secrets
+Voir `docs/demo-script.md` §E pour le détail (déclenchement manuel plutôt que CronJob, secrets
 en variables d'environnement plutôt qu'External Secrets Operator, un seul rapport traité par
 exécution). La validation avant merge n'est plus une limite théorique : voir §7 ci-dessous, un
 test de staging automatique est réellement implémenté dans le remédiateur.
