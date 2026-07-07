@@ -1,0 +1,20 @@
+{
+  "dev": {
+    "app": "vulnerable-app-dev",
+    "sync_status": "Synced",
+    "health_status": "Healthy",
+    "last_synced_at": "2026-06-26T09:13:00Z"
+  },
+  "staging": {
+    "app": "vulnerable-app-staging",
+    "sync_status": "OutOfSync",
+    "health_status": "Progressing",
+    "last_synced_at": "2026-06-25T08:01:00Z"
+  },
+  "prod": {
+    "app": "vulnerable-app-prod",
+    "sync_status": "Synced",
+    "health_status": "Healthy",
+    "last_synced_at": "2026-06-20T00:05:00Z"
+  }
+}
