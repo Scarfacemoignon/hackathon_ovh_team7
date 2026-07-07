@@ -41,6 +41,9 @@ Ta mission :
 - Si tu bascules le conteneur en utilisateur non-root, prevois aussi les volumes
   emptyDir necessaires (ex: /var/cache/nginx et /var/run pour une image nginx)
   afin d'eviter toute erreur de permission au demarrage.
+- N'utilise JAMAIS le tag ":latest" ni une image sans tag : choisis toujours une
+  version explicite et figee (ex: "nginx:1.30.3-alpine"). Le tag ":latest" est
+  interdit par notre policy Kyverno "disallow-latest-tag" et n'est pas reproductible.
 - Si un rapport d'echec de staging est fourni, corrige precisement la cause
   indiquee (ne repete pas la meme erreur).
 - Le YAML doit rester un Deployment valide et minimal (memes noms, memes labels).
@@ -124,7 +127,26 @@ def ask_ai_for_fix(ai: OpenAI, report_summary: str, current_manifest: str,
     return explanation, fixed_yaml
 
 
-# ----------- 3bis. Valider le correctif dans un namespace de staging ephemere -----------
+# ----------- 3bis. Refuser le tag :latest (verification statique, avant le staging) -----------
+
+def check_no_latest_tag(fixed_yaml: str) -> tuple[bool, str]:
+    """Refuse tout tag ':latest' ou image sans tag : ca viole notre policy Kyverno
+    'disallow-latest-tag' et ce n'est pas reproductible. Verification statique et
+    gratuite, faite avant le test de staging (qui, lui, ne detecterait pas ce
+    probleme puisque le pod demarre tres bien avec :latest)."""
+    manifest = yaml.safe_load(fixed_yaml)
+    for c in manifest["spec"]["template"]["spec"]["containers"]:
+        image = c.get("image", "")
+        if ":" not in image or image.rsplit(":", 1)[1] == "latest":
+            return False, (
+                f"Image '{image}' refusee : le tag ':latest' (ou l'absence de tag, "
+                f"equivalente) est interdit par la policy Kyverno 'disallow-latest-tag'. "
+                f"Utilise une version explicite et figee (ex: nginx:1.30.3-alpine)."
+            )
+    return True, ""
+
+
+# ----------- 3ter. Valider le correctif dans un namespace de staging ephemere -----------
 
 def validate_in_staging(fixed_yaml: str, timeout_s: int = STAGING_TIMEOUT_S) -> tuple[bool, str]:
     """Deploie le manifest corrige dans un namespace jetable, isole du namespace TARGET_NAMESPACE
@@ -192,6 +214,13 @@ def get_validated_fix(ai: OpenAI, summary: str, manifest: str):
         print(f"\n=== Appel a l'IA (tentative {attempt}/{MAX_ATTEMPTS})... ===")
         explanation, fixed_yaml = ask_ai_for_fix(ai, summary, manifest, previous_failure)
         print("\n=== Explication de l'IA ===\n" + explanation)
+
+        tag_ok, tag_report = check_no_latest_tag(fixed_yaml)
+        if not tag_ok:
+            print(f"\n=== Verification du tag d'image... ===\nECHEC : {tag_report}")
+            staging_ok, staging_report = False, tag_report
+            previous_failure = tag_report
+            continue  # inutile de deployer en staging, ':latest' demarre tres bien -- ce n'est pas la ce qu'on teste ici
 
         print(f"\n=== Test en staging (namespace ephemere, isole de '{TARGET_NAMESPACE}')... ===")
         staging_ok, staging_report = validate_in_staging(fixed_yaml)
