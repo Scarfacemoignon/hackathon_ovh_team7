@@ -124,7 +124,9 @@ Montrer le nouveau pod démarrer, l'ancien être supprimé (`prune`), et dans Gr
 
 **7. (1 min) Conclusion.**
 Tableau récapitulatif CNCF (voir `docs/architecture.md`), limites connues et pistes
-d'amélioration (voir §D).
+d'amélioration (voir §D). Si le jury relance sur le SLA ou le risque de casser la prod, enchaîner
+directement sur `docs/architecture.md` §7 (test de staging déjà implémenté + vision canary/Argo
+Rollouts) plutôt que d'improviser.
 
 ## D. Limites connues et pistes d'amélioration (à mentionner en conclusion)
 
@@ -133,12 +135,13 @@ d'amélioration (voir §D).
 2. **Déclenchement manuel** — la vraie automatisation serait un `CronJob` Kubernetes
    (via `config.load_incluster_config()` + un `ServiceAccount` en lecture seule sur les CRD Trivy),
    qu'on a documenté mais pas eu le temps d'implémenter en 2 jours.
-3. **Pas de validation `--dry-run=server` avant la PR** — on l'a découvert à nos dépens, deux
-   fois : un premier correctif IA (passage en non-root) cassait le démarrage de nginx
-   (`/var/cache/nginx` non accessible en écriture) ; un second proposait le tag `nginx:latest`,
-   que notre propre policy Kyverno `disallow-latest-tag` signale en violation. La revue humaine
-   a laissé passer ce second cas (Kyverno est en `Audit`, pas `Enforce`) — bon exemple pour le
-   jury de la complémentarité (imparfaite) des garde-fous.
+3. **Résolu depuis** : les deux premiers correctifs IA (non-root sans volume inscriptible, puis
+   tag `nginx:latest` que notre policy Kyverno `disallow-latest-tag` signale) sont passés en PR
+   sans validation préalable — la revue humaine les a rattrapés, mais ça a motivé l'ajout d'un
+   **test de staging automatique dans le remédiateur** (déploiement réel dans un namespace
+   éphémère + retentative informée par l'échec avant même d'ouvrir la PR, voir
+   `docs/architecture.md` §7.1). Bon exemple pour le jury : les garde-fous se sont améliorés en
+   cours de route grâce aux incidents réels rencontrés pendant le hackathon.
 4. **Secrets en variables d'environnement** — à remplacer par un `Secret` Kubernetes +
    External Secrets Operator (brique optionnelle CNCF) en production.
 5. **Pas de garde anti-doublon de PR** — vérifier qu'une PR `fix/ai-remediation` n'est pas déjà

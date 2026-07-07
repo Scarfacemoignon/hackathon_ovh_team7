@@ -90,6 +90,86 @@ Cluster Kubernetes OVHcloud (hackathon-equipe-7, gra11)
 
 ## 6. Limites et pistes d'amélioration
 
-Voir `docs/demo-script.md` §"Limites connues" pour le détail (déclenchement manuel plutôt que
-CronJob, absence de validation `--dry-run=server` avant PR, secrets en variables
-d'environnement plutôt qu'External Secrets Operator, un seul rapport traité par exécution).
+Voir `docs/demo-script.md` §D pour le détail (déclenchement manuel plutôt que CronJob, secrets
+en variables d'environnement plutôt qu'External Secrets Operator, un seul rapport traité par
+exécution). La validation avant merge n'est plus une limite théorique : voir §7 ci-dessous, un
+test de staging automatique est réellement implémenté dans le remédiateur.
+
+## 7. Vision : fiabilité (SLA) et validation progressive avant la production
+
+Cette section répond à deux questions posées par le jury en soutenance : comment tenir un haut
+niveau de disponibilité, et comment garantir qu'un correctif ne casse jamais la production.
+
+### 7.1 Déjà implémenté : un vrai test fonctionnel avant chaque Pull Request
+
+Le remédiateur (`apps/remediator/remediator.py`) ne se contente pas de proposer un YAML : avant
+d'ouvrir la PR, il **déploie le correctif dans un namespace Kubernetes éphémère**, isolé du
+namespace `demo` de production, et attend que le pod atteigne l'état `Ready`. Si ça échoue
+(`CrashLoopBackOff`, erreur de permissions, image introuvable...), il **redemande un correctif à
+l'IA en lui donnant le rapport d'échec exact** — une boucle d'auto-correction, pas un simple
+essai unique. Si l'échec persiste, la PR est quand même ouverte, mais avec un titre et une
+description signalant explicitement l'échec, pour que la revue humaine sache exactement quoi
+vérifier. Le namespace de test est supprimé dans tous les cas.
+
+C'est délibérément plus strict qu'un simple `kubectl apply --dry-run=server` : un dry-run
+valide la conformité au schéma Kubernetes, mais n'aurait pas détecté notre propre incident réel
+(pod qui *démarre* selon l'API mais qui *crash* juste après faute de volume inscriptible). Seul
+un déploiement réel, même éphémère, révèle ce genre de défaut fonctionnel.
+
+### 7.2 Fiabilité et disponibilité (SLA)
+
+Approche SRE classique : on raisonne en **budget d'erreur** plutôt qu'en "zéro incident". Pour
+un objectif de disponibilité élevé (ex. 99,99 %, soit environ 4 minutes d'indisponibilité
+tolérées par mois), deux leviers comptent autant l'un que l'autre : réduire le **MTTD** (temps
+de détection) et le **MTTR** (temps de réparation) — plutôt que de viser l'absence totale
+d'incident, irréaliste.
+
+Ce qui contribue déjà à ça dans l'architecture actuelle :
+- **Argo CD `selfHeal`** : tout drift ou suppression accidentelle est corrigé automatiquement,
+  sans intervention humaine — MTTR proche de zéro pour cette classe d'incidents.
+- **Prometheus + Grafana** : détection proactive (MTTD bas) via les métriques de sécurité et de
+  santé applicative.
+
+Ce qu'on ajouterait pour un objectif de disponibilité formel en production :
+- **Réplication (`replicas >= 2`) + anti-affinité de pods + `PodDisruptionBudget`** : le service
+  survit à la perte d'un node ou à une maintenance planifiée.
+- **Stratégie de rollout `RollingUpdate` avec `maxUnavailable: 0`** couplée à des
+  **readiness/liveness probes** : aucun trafic n'est jamais routé vers un pod pas encore prêt,
+  donc aucun déploiement ne cause de coupure visible.
+- **Istio** (brique CNCF optionnelle déjà mentionnée dans le brief) : retries automatiques,
+  circuit breaking, et mTLS entre services — utile dès que l'architecture applicative devient
+  multi-services.
+- **Alertmanager** branché sur Prometheus pour notifier l'équipe avant que le budget d'erreur ne
+  soit consommé, plutôt qu'après coup.
+
+### 7.3 Validation progressive : de staging à la production
+
+Le test de staging du §7.1 est la première brique d'un pipeline de promotion plus large,
+conçu (mais non entièrement implémenté faute de temps) comme suit :
+
+1. **Environnements déclarés par répertoire (overlays Kustomize `base/`, `staging/`, `prod/`)**
+   plutôt que par branches Git longues : un seul historique, un diff explicite entre
+   environnements, aucun risque de divergence entre branches qui ne se synchronisent plus.
+2. **Une Application Argo CD par environnement**, la promotion `staging → prod` se faisant par
+   un commit qui met à jour une référence d'image/manifest dans l'overlay `prod/` — jamais par
+   une action manuelle sur le cluster.
+3. **Argo Rollouts** (projet de la famille Argo, donc du même écosystème CNCF qu'Argo CD) pour
+   un déploiement **canary** en production : le nouveau correctif reçoit d'abord 10 % du trafic,
+   une `AnalysisTemplate` interroge Prometheus (taux d'erreur, latence) à chaque palier, et
+   promeut automatiquement (25 % → 50 % → 100 %) ou déclenche un **rollback automatique** si les
+   métriques se dégradent — sans qu'un humain ait à surveiller le rollout en temps réel.
+
+Ce pipeline complet (staging fonctionnel → canary progressif → rollback automatique) est la
+réponse structurelle à "comment ne jamais bloquer la prod" : chaque étape est un filtre
+supplémentaire, et aucune n'est laissée à la seule discrétion de l'IA.
+
+### 7.4 Ce qu'il resterait à faire pour une vraie mise en production
+
+- Étendre le test de staging du remédiateur à un déploiement Argo Rollouts canary réel (au lieu
+  d'un simple pod isolé).
+- External Secrets Operator pour ne plus jamais manipuler de credentials en variables
+  d'environnement, même en local.
+- Déclenchement du remédiateur par `CronJob` plutôt que manuellement (voir §D du script de
+  démo).
+- Traiter tous les `VulnerabilityReport`/`ConfigAuditReport` du cluster, pas seulement le
+  premier trouvé.
