@@ -13,8 +13,9 @@ spec:
     spec:
       containers:
         - name: web
-          image: nginx:1.23.3
+          image: nginx:1.30.3-alpine
           securityContext:
+            privileged: false
             runAsUser: 1000
           resources:
             limits:
@@ -26,12 +27,12 @@ spec:
           ports:
             - containerPort: 80
           volumeMounts:
-            - name: cache
+            - name: cache-volume
               mountPath: /var/cache/nginx
-            - name: run
+            - name: run-volume
               mountPath: /var/run
       volumes:
-        - name: cache
+        - name: cache-volume
           emptyDir: {}
-        - name: run
+        - name: run-volume
           emptyDir: {}
