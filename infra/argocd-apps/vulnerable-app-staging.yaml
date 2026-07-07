@@ -1,20 +1,18 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: vulnerable-app
+  name: vulnerable-app-staging
   namespace: argocd
 spec:
   project: default
   source:
     repoURL: https://github.com/Scarfacemoignon/hackathon_ovh_team7.git
     targetRevision: main
-    path: apps/vulnerable-app
+    path: apps/vulnerable-app/staging
   destination:
     server: https://kubernetes.default.svc
-    namespace: demo
+    namespace: staging
   syncPolicy:
-    automated:
-      prune: true      # supprime ce qui a disparu de Git
-      selfHeal: true    # répare le drift manuel
+    # Pas de "automated" : promotion manuelle uniquement, apres validation complete de dev.
     syncOptions:
       - CreateNamespace=true

@@ -16,7 +16,12 @@ from github import Github
 from kubernetes import client, config
 from openai import OpenAI
 
-MANIFEST_PATH = "apps/vulnerable-app/deployment.yaml"
+# Cible configurable via l'environnement (voir .env.example) : par contrat, le remediateur
+# ne doit jamais agir en dehors de 'dev' -- staging/prod ne se promeuvent qu'a la main.
+TARGET_NAMESPACE = os.environ.get("TARGET_NAMESPACE", "dev")
+MANIFEST_PATH = os.environ.get("MANIFEST_PATH", f"apps/vulnerable-app/{TARGET_NAMESPACE}/deployment.yaml")
+FORBIDDEN_NAMESPACES = {"staging", "prod"}
+
 REMEDIATION_BRANCH = "fix/ai-remediation"
 MAX_ATTEMPTS = 2          # 1 essai + 1 retentative informee par l'echec de staging
 STAGING_TIMEOUT_S = 60    # temps laisse au pod de test pour devenir Ready
@@ -50,7 +55,7 @@ YAML:
 
 # ----------- 1. Lire les rapports Trivy dans le cluster -----------
 
-def get_vulnerability_reports(namespace: str = "demo") -> list[dict]:
+def get_vulnerability_reports(namespace: str = TARGET_NAMESPACE) -> list[dict]:
     """Récupère les VulnerabilityReports (CRD de trivy-operator)."""
     config.load_kube_config()  # utilise ~/.kube/config
     api = client.CustomObjectsApi()
@@ -242,6 +247,11 @@ def open_pull_request(gh_repo, file_sha: str, fixed_yaml: str, explanation: str,
 # ----------- Orchestration -----------
 
 def main():
+    if TARGET_NAMESPACE in FORBIDDEN_NAMESPACES:
+        print(f"REFUS : TARGET_NAMESPACE='{TARGET_NAMESPACE}' est un environnement a promotion "
+              f"manuelle uniquement (staging/prod). Le remediateur ne doit agir que sur 'dev'.")
+        return
+
     ai = OpenAI(base_url=os.environ["OVH_AI_BASE_URL"],
                 api_key=os.environ["OVH_AI_TOKEN"])
     gh_repo = Github(os.environ["GITHUB_TOKEN"]).get_repo(os.environ["GITHUB_REPO"])
@@ -252,9 +262,9 @@ def main():
         print("Merge-la ou ferme-la avant de relancer le remediateur.")
         return
 
-    reports = get_vulnerability_reports("demo")
+    reports = get_vulnerability_reports(TARGET_NAMESPACE)
     if not reports:
-        print("Aucun VulnerabilityReport dans le namespace demo. Trivy a-t-il fini de scanner ?")
+        print(f"Aucun VulnerabilityReport dans le namespace {TARGET_NAMESPACE}. Trivy a-t-il fini de scanner ?")
         return
 
     summary = summarize_report(reports[0])
