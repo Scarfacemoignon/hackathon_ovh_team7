@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+  labels:
+    environment: dev
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging
+  labels:
+    environment: staging
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prod
+  labels:
+    environment: prod
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-remediation
+  labels:
+    environment: security
+    managed-by: argocd
