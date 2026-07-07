@@ -21,8 +21,13 @@ source .env      # si absent : cp .env.example .env, puis remplir (voir README �
 ```bash
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80
+kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090
 kubectl port-forward svc/falco-falcosidekick-ui -n falco 2802:2802
 ```
+Si une page ne charge pas alors que le process tourne encore (`ps aux | grep port-forward`),
+c'est un tunnel mort après une coupure réseau — `curl -sk -o /dev/null -w "%{http_code}\n"
+http://localhost:3000` renverra `000`. Solution : `pkill -f "kubectl port-forward"` puis
+relancer les 4 commandes ci-dessus (voir `docs/commands-reference.md` §11).
 
 **4. Vérifier que tout est vert.**
 ```bash

@@ -79,6 +79,13 @@ kubectl port-forward svc/falco-falcosidekick-ui -n falco 2802:2802   # terminal 
 ✅ Attendu : connexion réussie sur https://localhost:8080 (Argo CD), http://localhost:3000
 (Grafana), http://localhost:2802 (Falco UI) avec les identifiants du `.env`.
 
+**Piège fréquent** : après une coupure réseau ou une mise en veille, un `port-forward` peut
+rester visible dans `ps aux` sans plus répondre. Si une page ne charge pas :
+```bash
+curl -sk -o /dev/null -w "%{http_code}\n" http://localhost:3000   # 000 = tunnel mort
+pkill -f "kubectl port-forward" && # puis relancer chaque commande port-forward
+```
+
 ## 6. Tester la brique IA (sans ouvrir de PR)
 
 ```bash
@@ -93,10 +100,11 @@ source ../../.env
 
 ## 7. (Optionnel, à coordonner avec l'équipe) Tester la boucle complète
 
-⚠️ Ne lancer `remediator.py` (pas `test_ai_connection.py`) qu'après avoir vérifié avec l'équipe
-qu'aucune PR `fix/ai-remediation` n'est déjà ouverte (`gh pr list` sur le dépôt) — sinon conflit
-avec une PR existante. Voir `docs/demo-script.md` §B pour remettre le cluster en état vulnérable
-avant de tester, et §C étape 4 pour lancer le remédiateur.
+Le script vérifie lui-même qu'aucune PR n'est déjà ouverte sur la branche `fix/ai-remediation`
+avant de continuer (il s'arrête proprement sinon). Il déploie aussi le correctif dans un
+namespace de staging éphémère avant d'ouvrir la PR — voir `apps/remediator/README.md` pour le
+détail. Voir `docs/demo-script.md` §B pour remettre le cluster en état vulnérable avant de
+tester, et §C étape 4 pour lancer le remédiateur.
 
 ## Récapitulatif : ce que "ça fonctionne" veut dire
 
@@ -107,3 +115,5 @@ avant de tester, et §C étape 4 pour lancer le remédiateur.
 | Détection active | `kubectl get vulnerabilityreports -n demo` | Rapports présents |
 | UIs accessibles | ouvrir les 3 URLs après `port-forward` | Login réussi |
 | IA connectée | `test_ai_connection.py` | Réponse de l'IA affichée |
+
+Pour toute autre commande utile non listée ici, voir `docs/commands-reference.md`.

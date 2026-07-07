@@ -52,7 +52,9 @@ Cluster Kubernetes managé OVHcloud (hackathon-equipe-7, région gra11)
         2. lit le manifest actuel depuis GitHub (Git = source de vérité, jamais le cluster)
         3. envoie rapport + manifest à l'IA (AI Endpoints OVHcloud)
         4. reçoit un YAML corrigé + une explication
-        5. ouvre une Pull Request GitHub
+        5. teste le correctif dans un namespace de staging éphémère (retente une fois
+           auprès de l'IA si ça échoue, avec le rapport d'échec exact)
+        6. ouvre une Pull Request GitHub, résultat du test inclus dans la description
                 │
                 ▼ revue humaine obligatoire + merge
         Dépôt Git (GitHub) ──► Argo CD détecte le changement ──► resynchronise le cluster
@@ -78,13 +80,17 @@ flowchart TD
     Repo[("Dépôt Git\nGitHub")]
     Remed["Remédiateur IA\napps/remediator/remediator.py\n(hors cluster, en local)"]
     AI["AI Endpoints OVHcloud\n(Qwen2.5-VL-72B-Instruct)"]
+    Staging["Namespace de staging\néphémère (isolé de 'demo')"]
     Human(("Revue humaine"))
 
     Trivy -.->|VulnerabilityReport| Remed
     Repo -.->|lit le manifest actuel| Remed
     Remed -->|rapport + manifest| AI
     AI -->|YAML corrigé + explication| Remed
-    Remed -->|ouvre une Pull Request| Repo
+    Remed -->|deploie pour tester| Staging
+    Staging -.->|echec : rapport d'erreur| AI
+    Staging -->|succes| Remed
+    Remed -->|ouvre une Pull Request\navec le resultat du test| Repo
     Repo --> Human
     Human -->|merge| Repo
     Repo -.->|détecte le nouveau commit| ArgoCD
@@ -110,17 +116,18 @@ jamais une modification silencieuse du cluster.
 - **Falco avec driver `modern_ebpf`** : seul driver ne nécessitant pas de compilation de module
   noyau, donc compatible avec un cluster managé.
 - **Revue humaine obligatoire avant merge** : le garde-fou central de toute l'architecture
-  (voir l'incident réel raconté en §5).
+  (voir les incidents réels racontés en §6).
 
 ## 2. Structure du dépôt
 
 ```
 apps/
   vulnerable-app/deployment.yaml   # le workload volontairement vulnérable (la "cible")
-  remediator/                      # script IA : lecture Trivy, correctif IA, ouverture de PR
+  remediator/                      # script IA : lecture Trivy, correctif IA, test staging, PR
     remediator.py
     test_ai_connection.py          # test isolé de connexion aux AI Endpoints
     README.md                      # comment lancer le remédiateur, variables d'env requises
+    .venv/                         # environnement Python local (ignoré par Git)
 infra/
   argocd-apps/                     # Applications Argo CD (pattern App-of-Apps)
     vulnerable-app.yaml
@@ -131,9 +138,13 @@ infra/
     falco.yaml
 policies/                          # les 3 ClusterPolicy Kyverno
 docs/
-  architecture.md                  # rapport d'architecture + tableau CNCF
-  demo-script.md                   # script de démo minuté + procédure de rejeu
+  architecture.md                  # rapport d'architecture + tableau CNCF + vision SLA/staging
+  demo-script.md                   # script de démo complet (backstage, rejeu, déroulé, limites)
+  team-testing-guide.md            # guide pour qu'un coéquipier valide la stack sur son poste
+  commands-reference.md            # aide-mémoire de toutes les commandes utilisées
 root-app.yaml                      # Application Argo CD racine (App-of-Apps)
+.env.example                       # modèle de variables d'environnement (committé, sans secrets)
+.env                                # variables reelles (ignoré par Git, jamais commité)
 ```
 
 **Le pattern App-of-Apps** : `root-app.yaml` est la seule Application appliquée manuellement
@@ -178,6 +189,15 @@ cluster à la main. Ajouter un outil = ajouter un fichier + `git push`.
     réel est découvert (le conteneur ne démarre plus en non-root, faute de volumes inscriptibles)
     → corrigé → cluster validé sain (0 CVE CRITICAL/HIGH, 3/3 policies Kyverno passent).
 15. **Documentation** : rapport d'architecture, tableau CNCF, script de démo.
+16. **Rejeu de la démo devant le jury** : un second incident survient (l'IA propose le tag
+    `nginx:latest`, que notre policy Kyverno `disallow-latest-tag` signale en violation) —
+    corrigé manuellement. Le jury demande ensuite comment garantir le SLA et éviter qu'un
+    correctif casse la prod.
+17. **Amélioration du remédiateur** : ajout d'un test de staging automatique (déploiement réel
+    dans un namespace éphémère, isolé de `demo`, avec retentative informée par l'échec auprès
+    de l'IA), d'une garde anti-doublon de PR, et d'un rapport d'architecture enrichi d'une
+    section Vision (SLA, staging → canary avec Argo Rollouts) — réponse concrète, pas juste
+    orale, aux questions du jury.
 
 ## 4. Accéder aux outils
 
@@ -208,6 +228,16 @@ kubectl get policyreports -A              # violations détectées par Kyverno
 kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=50 | grep -i warning   # alertes Falco
 ```
 
+**Piège rencontré plusieurs fois : un tunnel "vivant" mais qui ne répond plus.** Après une
+coupure réseau ou une mise en veille du poste, `kubectl port-forward` peut laisser un processus
+actif en apparence (visible dans `ps aux`) qui ne transmet plus rien. Symptôme : la page web ne
+charge pas, sans message d'erreur clair. Diagnostic et correction :
+```bash
+curl -sk -o /dev/null -w "%{http_code}\n" http://localhost:3000   # 000 = tunnel mort
+pkill -f "kubectl port-forward"                                   # tue tous les tunnels
+# puis relancer chaque port-forward normalement
+```
+
 ## 5. Le remédiateur IA - comment le lancer
 
 Voir `apps/remediator/README.md` pour le détail complet. En résumé :
@@ -221,19 +251,31 @@ source ../../.env       # charge OVH_AI_TOKEN, OVH_AI_BASE_URL, OVH_AI_MODEL, GI
 .venv/bin/python remediator.py
 ```
 
-Le script affiche le rapport résumé, l'explication de l'IA, puis l'URL de la Pull Request
-ouverte automatiquement. **Elle doit être relue par un humain avant d'être mergée** - ce n'est
-jamais automatique, c'est le garde-fou central de l'architecture.
+Le script affiche le rapport résumé, l'explication de l'IA, le résultat du **test de staging
+automatique** (déploiement réel dans un namespace éphémère avant toute PR — voir §6), puis l'URL
+de la Pull Request. **Elle doit être relue par un humain avant d'être mergée** - ce n'est jamais
+automatique, c'est le garde-fou central de l'architecture.
 
-## 6. Incident réel rencontré (bon exemple pour la soutenance)
+## 6. Incidents réels rencontrés (bons exemples pour la soutenance)
 
-Le premier correctif proposé par l'IA passait le conteneur en utilisateur non-root - bonne
-pratique de sécurité, mais qui a cassé le démarrage de nginx (`/var/cache/nginx/client_temp`
-non accessible en écriture par un utilisateur non-root sans volume dédié). Merge effectué,
-Argo CD a resynchronisé, le pod est parti en `CrashLoopBackOff`. Corrigé en ajoutant deux
-volumes `emptyDir` (`/var/cache/nginx`, `/var/run`). **C'est exactement pour ce genre de cas
-que la revue humaine reste indispensable** - une automatisation à 100% sans contrôle aurait pu
-casser la production silencieusement.
+**1. Le conteneur non-root sans volume inscriptible.** Le premier correctif proposé par l'IA
+passait le conteneur en utilisateur non-root - bonne pratique de sécurité, mais qui a cassé le
+démarrage de nginx (`/var/cache/nginx/client_temp` non accessible en écriture sans volume
+dédié). Merge effectué, Argo CD a resynchronisé, le pod est parti en `CrashLoopBackOff`. Corrigé
+en ajoutant deux volumes `emptyDir` (`/var/cache/nginx`, `/var/run`) — **deux fois de suite**, le
+même piège s'est reproduit lors d'un rejeu de la démo.
+
+**2. Le tag `:latest` qui viole notre propre policy.** Un correctif ultérieur proposait
+`nginx:latest` - Kyverno (`disallow-latest-tag`, mode `Audit`) l'a signalé en violation sans
+bloquer le merge, que la revue humaine avait laissé passer. Bon exemple de la complémentarité
+(imparfaite) de plusieurs garde-fous.
+
+**Conséquence concrète** : ces deux incidents ont motivé l'ajout d'un **test de staging
+automatique** dans le remédiateur (§7 de `docs/architecture.md`) — chaque correctif est
+maintenant réellement déployé dans un namespace jetable avant d'ouvrir la PR, avec une
+retentative auto-corrigée par l'IA en cas d'échec. **C'est exactement pour ce genre de cas que
+la revue humaine reste indispensable, et que l'architecture a été renforcée en conséquence** -
+une automatisation à 100 % sans contrôle aurait pu casser la production silencieusement.
 
 ## 7. Statut CNCF des composants
 
@@ -257,7 +299,8 @@ remédiateur teste chaque correctif dans un namespace de staging éphémère ava
 
 ## 9. Documentation complémentaire
 
-- `docs/architecture.md` - rapport d'architecture complet (1-2 pages) + tableau CNCF
+- `docs/architecture.md` - rapport d'architecture complet (1-2 pages) + tableau CNCF + vision SLA/staging
 - `docs/demo-script.md` - script de démo complet de A à Z (backstage, déroulé minuté, rejeu)
 - `docs/team-testing-guide.md` - guide pour qu'un coéquipier vérifie la stack sur son poste
-- `apps/remediator/README.md` - documentation détaillée du remédiateur
+- `docs/commands-reference.md` - aide-mémoire de toutes les commandes utilisées pendant le hackathon
+- `apps/remediator/README.md` - documentation détaillée du remédiateur (dont le test de staging)
