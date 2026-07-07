@@ -193,7 +193,7 @@ def get_validated_fix(ai: OpenAI, summary: str, manifest: str):
         explanation, fixed_yaml = ask_ai_for_fix(ai, summary, manifest, previous_failure)
         print("\n=== Explication de l'IA ===\n" + explanation)
 
-        print("\n=== Test en staging (namespace ephemere, isole de 'demo')... ===")
+        print(f"\n=== Test en staging (namespace ephemere, isole de '{TARGET_NAMESPACE}')... ===")
         staging_ok, staging_report = validate_in_staging(fixed_yaml)
         print(staging_report)
 
