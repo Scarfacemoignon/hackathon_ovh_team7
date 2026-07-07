@@ -36,7 +36,9 @@ Cluster Kubernetes OVHcloud (hackathon-equipe-7, gra11)
 
 ## 3. Flux détaillé de la boucle
 
-1. Un workload volontairement vulnérable (`apps/vulnerable-app/`) est déployé via Argo CD.
+1. Un workload volontairement vulnérable (`apps/vulnerable-app/dev/`) est déployé via Argo CD
+   dans le namespace `dev` — le seul environnement sur lequel le remédiateur a le droit d'agir
+   (voir §7.3).
 2. Trivy-operator le scanne en continu et publie un `VulnerabilityReport` (CVE) et un
    `ConfigAuditReport` (mauvaises pratiques : `privileged`, root, absence de limites).
 3. Kyverno évalue les mêmes ressources contre 3 `ClusterPolicy` (`disallow-privileged`,
@@ -103,8 +105,9 @@ niveau de disponibilité, et comment garantir qu'un correctif ne casse jamais la
 ### 7.1 Déjà implémenté : un vrai test fonctionnel avant chaque Pull Request
 
 Le remédiateur (`apps/remediator/remediator.py`) ne se contente pas de proposer un YAML : avant
-d'ouvrir la PR, il **déploie le correctif dans un namespace Kubernetes éphémère**, isolé du
-namespace `demo` de production, et attend que le pod atteigne l'état `Ready`. Si ça échoue
+d'ouvrir la PR, il **déploie le correctif dans un namespace Kubernetes éphémère** (nommé
+`remediator-staging-<id>`, distinct du namespace persistant `staging` décrit en §7.3), et
+attend que le pod atteigne l'état `Ready`. Si ça échoue
 (`CrashLoopBackOff`, erreur de permissions, image introuvable...), il **redemande un correctif à
 l'IA en lui donnant le rapport d'échec exact** — une boucle d'auto-correction, pas un simple
 essai unique. Si l'échec persiste, la PR est quand même ouverte, mais avec un titre et une
@@ -142,25 +145,40 @@ Ce qu'on ajouterait pour un objectif de disponibilité formel en production :
 - **Alertmanager** branché sur Prometheus pour notifier l'équipe avant que le budget d'erreur ne
   soit consommé, plutôt qu'après coup.
 
-### 7.3 Validation progressive : de staging à la production
+### 7.3 Validation progressive : de dev à la production
 
-Le test de staging du §7.1 est la première brique d'un pipeline de promotion plus large,
-conçu (mais non entièrement implémenté faute de temps) comme suit :
+Le test de staging éphémère du §7.1 est la première brique d'un pipeline de promotion plus
+large. Une partie est désormais **réellement implémentée** (grâce au travail d'un membre de
+l'équipe, intégré et adapté) plutôt que purement théorique :
 
-1. **Environnements déclarés par répertoire (overlays Kustomize `base/`, `staging/`, `prod/`)**
-   plutôt que par branches Git longues : un seul historique, un diff explicite entre
-   environnements, aucun risque de divergence entre branches qui ne se synchronisent plus.
-2. **Une Application Argo CD par environnement**, la promotion `staging → prod` se faisant par
-   un commit qui met à jour une référence d'image/manifest dans l'overlay `prod/` — jamais par
-   une action manuelle sur le cluster.
-3. **Argo Rollouts** (projet de la famille Argo, donc du même écosystème CNCF qu'Argo CD) pour
+**Déjà en place** :
+1. **Trois namespaces déclarés par répertoire** (`apps/vulnerable-app/dev/`, `staging/`,
+   `prod/`) plutôt que par branches Git longues : un seul historique, un diff explicite entre
+   environnements, aucun risque de divergence entre branches qui ne se synchronisent plus. Un
+   quatrième namespace, `ai-remediation`, est réservé à une future exécution du remédiateur
+   *dans* le cluster (voir §7.4).
+2. **Une Application Argo CD par environnement**, avec des politiques de synchronisation
+   volontairement différentes : `vulnerable-app-dev` est en `syncPolicy.automated` (l'IA peut y
+   proposer des correctifs librement, Argo CD les applique dès qu'ils sont mergés) ;
+   `vulnerable-app-staging` et `vulnerable-app-prod` **n'ont pas** de synchronisation
+   automatique — leur Application existe et affiche l'état cible, mais rien ne s'applique tant
+   qu'un humain ne déclenche pas la synchronisation manuellement.
+3. **Garde-fou dans le code du remédiateur** : `remediator.py` refuse explicitement de
+   s'exécuter si `TARGET_NAMESPACE` vaut `staging` ou `prod` — la contrainte n'est pas qu'une
+   convention documentée, elle est vérifiée avant toute action.
+
+**Reste à faire pour un pipeline de promotion complet** :
+4. Automatiser la promotion `dev → staging → prod` par un commit qui copie le manifest validé
+   d'un environnement vers le suivant (aujourd'hui, la copie initiale existe mais la promotion
+   reste un geste manuel non outillé).
+5. **Argo Rollouts** (projet de la famille Argo, donc du même écosystème CNCF qu'Argo CD) pour
    un déploiement **canary** en production : le nouveau correctif reçoit d'abord 10 % du trafic,
    une `AnalysisTemplate` interroge Prometheus (taux d'erreur, latence) à chaque palier, et
    promeut automatiquement (25 % → 50 % → 100 %) ou déclenche un **rollback automatique** si les
    métriques se dégradent — sans qu'un humain ait à surveiller le rollout en temps réel.
 
-Ce pipeline complet (staging fonctionnel → canary progressif → rollback automatique) est la
-réponse structurelle à "comment ne jamais bloquer la prod" : chaque étape est un filtre
+Ce pipeline (namespaces séparés + promotion manuelle + à terme canary/rollback automatique) est
+la réponse structurelle à "comment ne jamais bloquer la prod" : chaque étape est un filtre
 supplémentaire, et aucune n'est laissée à la seule discrétion de l'IA.
 
 ### 7.4 Ce qu'il resterait à faire pour une vraie mise en production
@@ -169,7 +187,9 @@ supplémentaire, et aucune n'est laissée à la seule discrétion de l'IA.
   d'un simple pod isolé).
 - External Secrets Operator pour ne plus jamais manipuler de credentials en variables
   d'environnement, même en local.
-- Déclenchement du remédiateur par `CronJob` plutôt que manuellement (voir §D du script de
-  démo).
+- Déclenchement du remédiateur par `CronJob` plutôt que manuellement, déployé dans le namespace
+  `ai-remediation` déjà réservé à cet effet (voir §D du script de démo).
+- Automatiser la promotion `dev → staging → prod` (aujourd'hui : manifests dupliqués mais
+  promotion non outillée, voir §7.3).
 - Traiter tous les `VulnerabilityReport`/`ConfigAuditReport` du cluster, pas seulement le
   premier trouvé.

@@ -80,7 +80,7 @@ flowchart TD
     Repo[("Dépôt Git\nGitHub")]
     Remed["Remédiateur IA\napps/remediator/remediator.py\n(hors cluster, en local)"]
     AI["AI Endpoints OVHcloud\n(Qwen2.5-VL-72B-Instruct)"]
-    Staging["Namespace de staging\néphémère (isolé de 'demo')"]
+    Staging["Namespace de test ephemere\n(remediator-staging-*, distinct\ndu namespace persistant 'staging')"]
     Human(("Revue humaine"))
 
     Trivy -.->|VulnerabilityReport| Remed
@@ -122,7 +122,10 @@ jamais une modification silencieuse du cluster.
 
 ```
 apps/
-  vulnerable-app/deployment.yaml   # le workload volontairement vulnérable (la "cible")
+  vulnerable-app/
+    dev/deployment.yaml            # workload cible, corrigé par l'IA (seul namespace qu'elle touche)
+    staging/deployment.yaml        # copie promue manuellement après validation de dev
+    prod/deployment.yaml           # copie promue manuellement après validation de staging
   remediator/                      # script IA : lecture Trivy, correctif IA, test staging, PR
     remediator.py
     test_ai_connection.py          # test isolé de connexion aux AI Endpoints
@@ -130,12 +133,16 @@ apps/
     .venv/                         # environnement Python local (ignoré par Git)
 infra/
   argocd-apps/                     # Applications Argo CD (pattern App-of-Apps)
-    vulnerable-app.yaml
+    namespaces.yaml                # -> infra/namespaces/ (dev, staging, prod, ai-remediation)
+    vulnerable-app-dev.yaml        # auto-sync (l'IA peut y corriger librement)
+    vulnerable-app-staging.yaml    # promotion manuelle uniquement
+    vulnerable-app-prod.yaml       # promotion manuelle uniquement
     trivy-operator.yaml
     kyverno.yaml
     policies.yaml
     prometheus.yaml
     falco.yaml
+  namespaces/namespaces.yaml       # déclaration des 4 namespaces (dev/staging/prod/ai-remediation)
 policies/                          # les 3 ClusterPolicy Kyverno
 docs/
   architecture.md                  # rapport d'architecture + tableau CNCF + vision SLA/staging
@@ -146,6 +153,13 @@ root-app.yaml                      # Application Argo CD racine (App-of-Apps)
 .env.example                       # modèle de variables d'environnement (committé, sans secrets)
 .env                                # variables reelles (ignoré par Git, jamais commité)
 ```
+
+**Modèle dev → staging → prod** : le remédiateur ne lit et ne corrige que le namespace `dev`
+(garde-fou explicite dans `remediator.py` : il refuse de s'exécuter si on le pointe vers
+`staging` ou `prod`). Les Applications `vulnerable-app-staging` et `vulnerable-app-prod` n'ont
+volontairement **pas** de `syncPolicy.automated` — leur promotion se fait uniquement par un
+commit humain qui copie le contenu validé de l'environnement précédent. Cette structure a été
+initiée par un membre de l'équipe en parallèle, puis intégrée et adaptée ici.
 
 **Le pattern App-of-Apps** : `root-app.yaml` est la seule Application appliquée manuellement
 sur le cluster. Elle surveille le dossier `infra/argocd-apps/` : chaque fichier YAML qu'on y
@@ -194,10 +208,16 @@ cluster à la main. Ajouter un outil = ajouter un fichier + `git push`.
     corrigé manuellement. Le jury demande ensuite comment garantir le SLA et éviter qu'un
     correctif casse la prod.
 17. **Amélioration du remédiateur** : ajout d'un test de staging automatique (déploiement réel
-    dans un namespace éphémère, isolé de `demo`, avec retentative informée par l'échec auprès
+    dans un namespace éphémère, isolé du reste, avec retentative informée par l'échec auprès
     de l'IA), d'une garde anti-doublon de PR, et d'un rapport d'architecture enrichi d'une
     section Vision (SLA, staging → canary avec Argo Rollouts) — réponse concrète, pas juste
     orale, aux questions du jury.
+18. **Intégration du travail d'un coéquipier sur dev/staging/prod** : migration du namespace
+    unique `demo` vers un modèle à trois environnements (`dev` auto-corrigé par l'IA, `staging`
+    et `prod` en promotion manuelle uniquement), avec un namespace `ai-remediation` dédié pour
+    une future automatisation par `CronJob`. Le remédiateur cible désormais `dev` via des
+    variables d'environnement configurables (`TARGET_NAMESPACE`, `MANIFEST_PATH`) et refuse
+    explicitement de s'exécuter sur `staging`/`prod`.
 
 ## 4. Accéder aux outils
 

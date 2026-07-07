@@ -33,8 +33,11 @@ relancer les 4 commandes ci-dessus (voir `docs/commands-reference.md` §11).
 ```bash
 kubectl get applications -n argocd -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status
 ```
-Toutes les Applications (`root`, `vulnerable-app`, `trivy-operator`, `kyverno`, `policies`,
-`kube-prometheus-stack`, `falco`) doivent être `Synced` / `Healthy`.
+Toutes les Applications (`root`, `namespaces`, `vulnerable-app-dev`, `trivy-operator`,
+`kyverno`, `policies`, `kube-prometheus-stack`, `falco`) doivent être `Synced` / `Healthy`.
+`vulnerable-app-staging` et `vulnerable-app-prod` restent volontairement `OutOfSync`/`Missing`
+tant qu'on ne les a pas synchronisées à la main — c'est le comportement attendu (promotion
+manuelle), pas une panne.
 
 **5. Se connecter à chaque outil pour confirmer les mots de passe** (voir README §4) :
 - Argo CD : https://localhost:8080 (`admin` / `$ARGOCD_ADMIN_PASSWORD`)
@@ -59,17 +62,17 @@ mergé entre-temps (le vôtre ou celui d'un coéquipier).
 cd ~/Desktop/"Hackathon-Challenge OVH"/hackathon_ovh_team7   # toujours depuis la racine du depot, jamais depuis apps/remediator
 git checkout main
 git pull
-git show vulnerable-baseline:apps/vulnerable-app/deployment.yaml > apps/vulnerable-app/deployment.yaml
-git add apps/vulnerable-app/deployment.yaml
+git show vulnerable-baseline:apps/vulnerable-app/dev/deployment.yaml > apps/vulnerable-app/dev/deployment.yaml
+git add apps/vulnerable-app/dev/deployment.yaml
 git commit -m "demo: retour a l'etat vulnerable pour rejouer la boucle"
 git push
 ```
 Argo CD resynchronise automatiquement (`prune`+`selfHeal`), ou forcer :
 ```bash
-kubectl patch application vulnerable-app -n argocd --type merge -p '{"operation":{"sync":{}}}'
+kubectl patch application vulnerable-app-dev -n argocd --type merge -p '{"operation":{"sync":{}}}'
 ```
 Attendre ~1-2 min que Trivy rescanne l'image avant de continuer — vérifier avec
-`kubectl get vulnerabilityreports -n demo` que les CVE CRITICAL/HIGH sont bien revenues.
+`kubectl get vulnerabilityreports -n dev` que les CVE CRITICAL/HIGH sont bien revenues.
 
 **Important** : avant de relancer le remédiateur, vérifier qu'aucune PR `fix/ai-remediation`
 n'est déjà ouverte (`gh pr list` ou l'onglet Pull requests sur GitHub) — sinon le script échoue
@@ -87,16 +90,16 @@ chercher les changements dans Git, aucun credential cluster ne sort vers l'exté
 
 **2. (1 min) L'app vulnérable et sa détection.**
 ```bash
-kubectl get vulnerabilityreports -n demo
-kubectl get configauditreports -n demo
+kubectl get vulnerabilityreports -n dev
+kubectl get configauditreports -n dev
 ```
 Montrer le nombre de CVE CRITICAL/HIGH sur `nginx:1.14`, et dans Grafana le graphique
 `sum(trivy_image_vulnerabilities{severity="Critical"})`.
 
 **3. (1 min) Violation Kyverno + alerte Falco en direct.**
 ```bash
-kubectl get policyreports -n demo
-kubectl exec -it deploy/vulnerable-web -n demo -- sh -c "cat /etc/shadow"
+kubectl get policyreports -n dev
+kubectl exec -it deploy/vulnerable-web -n dev -- sh -c "cat /etc/shadow"
 kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=20 | grep -i warning
 ```
 La lecture doit **réussir** (le conteneur tourne encore en root à ce stade) et une alerte Falco
@@ -121,11 +124,13 @@ propre policy Kyverno interdit), puis merger la PR.
 **6. (2 min) Argo CD resynchronise, cluster corrigé.**
 ```bash
 cd ~/Desktop/"Hackathon-Challenge OVH"/hackathon_ovh_team7
-kubectl get pods -n demo -w
+kubectl get pods -n dev -w
 ```
 Montrer le nouveau pod démarrer, l'ancien être supprimé (`prune`), et dans Grafana la courbe
 `trivy_image_vulnerabilities{severity="Critical"}` chuter au scan suivant. Vérifier aussi
-`kubectl get policyreports -n demo` : 0 violation.
+`kubectl get policyreports -n dev` : 0 violation. Mentionner ici, si le temps le permet, que
+`vulnerable-app-staging`/`-prod` existent déjà et n'attendent qu'une promotion manuelle
+(`argocd app sync vulnerable-app-staging`) — bonne transition vers la conclusion SLA/staging.
 
 **7. (1 min) Conclusion.**
 Tableau récapitulatif CNCF (voir `docs/architecture.md`), limites connues et pistes
@@ -137,8 +142,9 @@ Rollouts) plutôt que d'improviser.
 
 1. **Le remédiateur ne boucle que sur `reports[0]`** (un seul rapport) — en prod, il faudrait
    itérer sur tous les `VulnerabilityReport` et `ConfigAuditReport` du cluster.
-2. **Déclenchement manuel** — la vraie automatisation serait un `CronJob` Kubernetes
-   (via `config.load_incluster_config()` + un `ServiceAccount` en lecture seule sur les CRD Trivy),
+2. **Déclenchement manuel** — la vraie automatisation serait un `CronJob` Kubernetes, déployé
+   dans le namespace `ai-remediation` déjà réservé à cet effet (via
+   `config.load_incluster_config()` + un `ServiceAccount` en lecture seule sur les CRD Trivy),
    qu'on a documenté mais pas eu le temps d'implémenter en 2 jours.
 3. **Résolu depuis** : les deux premiers correctifs IA (non-root sans volume inscriptible, puis
    tag `nginx:latest` que notre policy Kyverno `disallow-latest-tag` signale) sont passés en PR
@@ -149,5 +155,9 @@ Rollouts) plutôt que d'improviser.
    cours de route grâce aux incidents réels rencontrés pendant le hackathon.
 4. **Secrets en variables d'environnement** — à remplacer par un `Secret` Kubernetes +
    External Secrets Operator (brique optionnelle CNCF) en production.
-5. **Pas de garde anti-doublon de PR** — vérifier qu'une PR `fix/ai-remediation` n'est pas déjà
-   ouverte avant d'en recréer une (voir §B).
+5. **Résolu depuis** : garde anti-doublon de PR ajoutée directement dans `remediator.py`
+   (`pr_already_open()`) — le script s'arrête proprement si une PR `fix/ai-remediation` est
+   déjà ouverte, plutôt que d'échouer en tentant de recréer la branche.
+6. **Promotion dev → staging → prod non automatisée** — les trois environnements existent
+   (voir `docs/architecture.md` §7.3), mais la copie du manifest validé d'un environnement vers
+   le suivant reste un geste manuel non outillé pour l'instant.

@@ -91,11 +91,11 @@ argocd account update-password --account admin \
 
 ```bash
 kubectl get vulnerabilityreports -A                          # vue d'ensemble
-kubectl get vulnerabilityreports -n demo -o yaml              # detail complet
-kubectl get configauditreports -n demo -o yaml                # mauvaises pratiques de config
+kubectl get vulnerabilityreports -n dev -o yaml              # detail complet
+kubectl get configauditreports -n dev -o yaml                # mauvaises pratiques de config
 
 # Version lisible triee par severite (jq maison en python)
-kubectl get vulnerabilityreport <nom> -n demo -o json | python3 -c "
+kubectl get vulnerabilityreport <nom> -n dev -o json | python3 -c "
 import json,sys
 d = json.load(sys.stdin)
 vulns = d['report']['vulnerabilities']
@@ -111,7 +111,7 @@ for v in vulns[:15]:
 ```bash
 kubectl get clusterpolicy                                     # les 3 policies, statut Ready
 kubectl get policyreports -A                                  # violations par ressource
-kubectl get policyreports -n demo -o wide
+kubectl get policyreports -n dev -o wide
 ```
 
 ## 6. Prometheus / Grafana
@@ -137,7 +137,7 @@ kubectl port-forward svc/falco-falcosidekick-ui -n falco 2802:2802
 kubectl logs -n falco -l app.kubernetes.io/name=falco --tail=50 | grep -i warning
 
 # Declencher une alerte de demo (sur un pod qui tourne encore en root)
-kubectl exec -it deploy/vulnerable-web -n demo -- sh -c "cat /etc/shadow"
+kubectl exec -it deploy/vulnerable-web -n dev -- sh -c "cat /etc/shadow"
 
 # Recuperer/changer les identifiants Falco UI (format "user:motdepasse" dans une seule cle)
 kubectl -n falco get secret falco-ui-credentials -o jsonpath='{.data.FALCOSIDEKICK_UI_USER}' | base64 -d
@@ -170,9 +170,10 @@ cd apps/remediator
 python3 -m venv .venv
 .venv/bin/pip install openai kubernetes PyGithub pyyaml
 
-source ../../.env      # charge OVH_AI_TOKEN, OVH_AI_BASE_URL, OVH_AI_MODEL, GITHUB_TOKEN, GITHUB_REPO
+source ../../.env      # charge entre autres TARGET_NAMESPACE=dev, MANIFEST_PATH=apps/vulnerable-app/dev/deployment.yaml
 .venv/bin/python test_ai_connection.py     # test isole de la connexion IA, sans toucher a GitHub
 .venv/bin/python remediator.py             # boucle complete : rapport -> IA -> staging -> PR
+# Le script refuse de s'executer si TARGET_NAMESPACE vaut "staging" ou "prod" (garde-fou).
 ```
 
 ## 10. Procédure de rejeu (remettre le cluster en état vulnérable)
@@ -180,11 +181,23 @@ source ../../.env      # charge OVH_AI_TOKEN, OVH_AI_BASE_URL, OVH_AI_MODEL, GIT
 ```bash
 cd ~/Desktop/"Hackathon-Challenge OVH"/hackathon_ovh_team7   # toujours depuis la racine du depot
 git checkout main && git pull
-git show vulnerable-baseline:apps/vulnerable-app/deployment.yaml > apps/vulnerable-app/deployment.yaml
-git add apps/vulnerable-app/deployment.yaml
+git show vulnerable-baseline:apps/vulnerable-app/dev/deployment.yaml > apps/vulnerable-app/dev/deployment.yaml
+git add apps/vulnerable-app/dev/deployment.yaml
 git commit -m "demo: retour a l'etat vulnerable pour rejouer la boucle"
 git push
-kubectl patch application vulnerable-app -n argocd --type merge -p '{"operation":{"sync":{}}}'
+kubectl patch application vulnerable-app-dev -n argocd --type merge -p '{"operation":{"sync":{}}}'
+```
+
+## 12. Promotion manuelle dev → staging → prod
+
+```bash
+# Une fois 'dev' valide (0 CVE CRITICAL/HIGH, 3/3 policies Kyverno OK) :
+git show main:apps/vulnerable-app/dev/deployment.yaml | sed 's/namespace: dev/namespace: staging/' > apps/vulnerable-app/staging/deployment.yaml
+git add apps/vulnerable-app/staging/deployment.yaml
+git commit -m "promote: dev -> staging" && git push
+kubectl patch application vulnerable-app-staging -n argocd --type merge -p '{"operation":{"sync":{}}}'
+
+# Meme principe pour staging -> prod, avec vulnerable-app-prod.
 ```
 
 ## 11. Dépannage

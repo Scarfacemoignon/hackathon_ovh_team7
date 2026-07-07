@@ -47,8 +47,10 @@ kubectl get nodes
 ```bash
 kubectl get applications -n argocd -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status
 ```
-✅ Attendu : 7 Applications (`root`, `vulnerable-app`, `trivy-operator`, `kyverno`, `policies`,
-`kube-prometheus-stack`, `falco`), toutes `Synced` / `Healthy`.
+✅ Attendu : 8 Applications (`root`, `namespaces`, `vulnerable-app-dev`, `trivy-operator`,
+`kyverno`, `policies`, `kube-prometheus-stack`, `falco`) `Synced`/`Healthy`, plus
+`vulnerable-app-staging` et `vulnerable-app-prod` volontairement `OutOfSync`/`Missing` (pas de
+synchronisation automatique — promotion manuelle uniquement, voir `docs/architecture.md` §7.3).
 
 **Si une Application est `OutOfSync`** : c'est parfois normal juste après un commit d'un
 coéquipier (Argo CD n'a pas encore resynchronisé, ça arrive automatiquement sous 3 min). Pour
@@ -57,9 +59,9 @@ forcer : `kubectl patch application <nom> -n argocd --type merge -p '{"operation
 ## 4. Vérifier que la détection de sécurité fonctionne
 
 ```bash
-kubectl get vulnerabilityreports -n demo       # CVE détectées par Trivy
-kubectl get configauditreports -n demo         # mauvaises pratiques détectées par Trivy
-kubectl get policyreports -n demo              # violations détectées par Kyverno
+kubectl get vulnerabilityreports -n dev       # CVE détectées par Trivy
+kubectl get configauditreports -n dev         # mauvaises pratiques détectées par Trivy
+kubectl get policyreports -n dev              # violations détectées par Kyverno
 ```
 ✅ Attendu : des rapports existent, avec des CVE CRITICAL/HIGH visibles (sauf si le correctif IA
 a déjà été mergé entre-temps par un coéquipier — dans ce cas 0 CRITICAL est normal aussi).
@@ -112,7 +114,7 @@ tester, et §C étape 4 pour lancer le remédiateur.
 |---|---|---|
 | Cluster accessible | `kubectl get nodes` | 3 nodes `Ready` |
 | GitOps à jour | `kubectl get applications -n argocd` | Toutes `Synced`/`Healthy` |
-| Détection active | `kubectl get vulnerabilityreports -n demo` | Rapports présents |
+| Détection active | `kubectl get vulnerabilityreports -n dev` | Rapports présents |
 | UIs accessibles | ouvrir les 3 URLs après `port-forward` | Login réussi |
 | IA connectée | `test_ai_connection.py` | Réponse de l'IA affichée |
 
