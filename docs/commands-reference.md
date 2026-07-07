@@ -130,6 +130,16 @@ kubectl -n monitoring patch secret grafana-admin-credentials --type merge -p '{"
 kubectl delete pods -n monitoring -l app.kubernetes.io/name=grafana   # pour que le pod recharge le secret
 ```
 
+## 6bis. Loki (logs, pour monitoring-console)
+
+```bash
+kubectl port-forward svc/loki -n monitoring 3100:3100
+
+# Namespaces ayant deja des logs indexes (Promtail ne pousse que les NOUVELLES lignes
+# depuis son demarrage -- un pod sans trafic recent peut ne pas encore y apparaitre)
+curl -s "http://localhost:3100/loki/api/v1/label/namespace/values"
+```
+
 ## 7. Falco
 
 ```bash
