@@ -59,7 +59,11 @@ YAML:
 # ----------- 1. Lire les rapports Trivy dans le cluster -----------
 
 def get_vulnerability_reports(namespace: str = TARGET_NAMESPACE) -> list[dict]:
-    """Récupère les VulnerabilityReports (CRD de trivy-operator)."""
+    """Récupère les VulnerabilityReports (CRD de trivy-operator), tries du plus
+    recent au plus ancien. L'API Kubernetes ne garantit aucun ordre particulier,
+    et Trivy garde des rapports pour d'anciens ReplicaSets (historique de
+    revisions) : sans ce tri, on risque de corriger un workload qui ne tourne
+    plus au lieu du pod reellement actif."""
     config.load_kube_config()  # utilise ~/.kube/config
     api = client.CustomObjectsApi()
     reports = api.list_namespaced_custom_object(
@@ -68,7 +72,9 @@ def get_vulnerability_reports(namespace: str = TARGET_NAMESPACE) -> list[dict]:
         namespace=namespace,
         plural="vulnerabilityreports",
     )
-    return reports["items"]
+    items = reports["items"]
+    items.sort(key=lambda r: r["metadata"]["creationTimestamp"], reverse=True)
+    return items
 
 
 def summarize_report(report: dict, max_cves: int = 15) -> str:
